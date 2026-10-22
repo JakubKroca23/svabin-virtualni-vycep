@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   DEFAULT_BEER,
   applySip,
@@ -80,9 +81,11 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
   let tableMesh = null;
   let bgMesh = null;
 
-  const GLASS_H = 0.24;
-  const GLASS_HALF_W = 0.065;
-  const VESSEL_POS = new THREE.Vector3(0.2, 0.2, 0);
+  const GLASS_H = 0.26;
+  const GLASS_HALF_W = 0.07;
+  const VESSEL_POS = new THREE.Vector3(0.22, 0.22, 0.02);
+  let pmrem = null;
+  let envRT = null;
 
   function emitHud() {
     callSafely(onHud, buildHud(state));
@@ -130,47 +133,56 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
     const glassGeo = makeGlassLathe(state.glassType);
     const glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xe8f2ff,
+      color: 0xffffff,
       metalness: 0,
-      roughness: 0.05,
-      transmission: 0.92,
-      thickness: 0.35,
-      ior: 1.5,
+      roughness: 0.02,
+      transmission: 1,
+      thickness: 0.55,
+      ior: 1.52,
       transparent: true,
       opacity: 1,
-      side: THREE.DoubleSide,
-      envMapIntensity: 1.2,
+      side: THREE.FrontSide,
+      envMapIntensity: 1.6,
       clearcoat: 1,
-      clearcoatRoughness: 0.05,
+      clearcoatRoughness: 0.02,
+      specularIntensity: 1,
+      attenuationColor: new THREE.Color(0xdce9ff),
+      attenuationDistance: 0.6,
     });
     const glassMesh = new THREE.Mesh(glassGeo, glassMat);
     glassMesh.castShadow = true;
     glassMesh.receiveShadow = true;
     glassGroup.add(glassMesh);
 
-    // Inner liquid (slightly smaller lathe, scaled by fill)
-    const liquidPts = glassLathePoints(state.glassType, GLASS_HALF_W * 0.92, GLASS_H * 0.96).map(
+    const liquidPts = glassLathePoints(state.glassType, GLASS_HALF_W * 0.93, GLASS_H * 0.97).map(
       (p) => new THREE.Vector2(p.x, p.y),
     );
-    const liquidGeo = new THREE.LatheGeometry(liquidPts, 48);
+    const liquidGeo = new THREE.LatheGeometry(liquidPts, 64);
     const beer = state.selectedBeer || DEFAULT_BEER;
-    const liquidMat = new THREE.MeshStandardMaterial({
+    const liquidMat = new THREE.MeshPhysicalMaterial({
       color: hexColor(beer.liquidMid),
-      roughness: 0.35,
-      metalness: 0.05,
+      roughness: 0.22,
+      metalness: 0.0,
+      transmission: 0.35,
+      thickness: 0.8,
+      ior: 1.35,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.96,
+      attenuationColor: hexColor(beer.liquidBottom),
+      attenuationDistance: 0.35,
+      envMapIntensity: 0.6,
     });
     liquidMesh = new THREE.Mesh(liquidGeo, liquidMat);
     liquidMesh.scale.set(1, 0.001, 1);
     liquidMesh.visible = false;
     glassGroup.add(liquidMesh);
 
-    const foamGeo = new THREE.CylinderGeometry(GLASS_HALF_W * 0.9, GLASS_HALF_W * 0.88, 0.018, 48);
+    const foamGeo = new THREE.CylinderGeometry(GLASS_HALF_W * 0.9, GLASS_HALF_W * 0.86, 0.022, 64);
     const foamMat = new THREE.MeshStandardMaterial({
       color: hexColor(beer.foamTone, 0xfbf6ea),
-      roughness: 0.9,
+      roughness: 0.95,
       metalness: 0,
+      flatShading: false,
     });
     foamMesh = new THREE.Mesh(foamGeo, foamMat);
     foamMesh.visible = false;
@@ -178,19 +190,14 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
     if (state.glassType === 'mug') {
       const handleCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(GLASS_HALF_W * 0.85, GLASS_H * 0.72, 0),
-        new THREE.Vector3(GLASS_HALF_W * 1.55, GLASS_H * 0.65, 0),
-        new THREE.Vector3(GLASS_HALF_W * 1.55, GLASS_H * 0.3, 0),
-        new THREE.Vector3(GLASS_HALF_W * 0.85, GLASS_H * 0.28, 0),
+        new THREE.Vector3(GLASS_HALF_W * 0.88, GLASS_H * 0.74, 0),
+        new THREE.Vector3(GLASS_HALF_W * 1.62, GLASS_H * 0.66, 0),
+        new THREE.Vector3(GLASS_HALF_W * 1.62, GLASS_H * 0.28, 0),
+        new THREE.Vector3(GLASS_HALF_W * 0.88, GLASS_H * 0.26, 0),
       ]);
-      const handleGeo = new THREE.TubeGeometry(handleCurve, 24, 0.008, 12, false);
-      const handleMat = new THREE.MeshPhysicalMaterial({
-        color: 0xdde8f5,
-        transmission: 0.85,
-        roughness: 0.08,
-        thickness: 0.2,
-        transparent: true,
-      });
+      const handleGeo = new THREE.TubeGeometry(handleCurve, 40, 0.009, 16, false);
+      const handleMat = glassMat.clone();
+      handleMat.thickness = 0.25;
       glassGroup.add(new THREE.Mesh(handleGeo, handleMat));
     }
   }
@@ -213,12 +220,20 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     // Aluminum can
     const canH = 0.145;
     const canR = 0.033;
-    const canGeo = new THREE.CylinderGeometry(canR, canR, canH, 48, 1, false);
-    const canMat = new THREE.MeshStandardMaterial({
-      color: 0xb0ada8,
-      metalness: 0.85,
-      roughness: 0.28,
+    const canGeo = new THREE.CylinderGeometry(canR, canR, canH, 64, 1, false);
+    if (labelTex) {
+      labelTex.wrapS = THREE.RepeatWrapping;
+      labelTex.repeat.set(1, 1);
+      labelTex.center.set(0.5, 0.5);
+    }
+    const canMat = new THREE.MeshPhysicalMaterial({
+      color: labelTex ? 0xffffff : 0xb0ada8,
+      metalness: labelTex ? 0.55 : 0.9,
+      roughness: labelTex ? 0.32 : 0.22,
       map: labelTex || null,
+      clearcoat: 0.4,
+      clearcoatRoughness: 0.25,
+      envMapIntensity: 1.1,
     });
     canMesh = new THREE.Mesh(canGeo, canMat);
     canMesh.castShadow = true;
@@ -264,64 +279,92 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
-      alpha: true,
+      alpha: false,
       powerPreference: 'high-performance',
       context: gl || undefined,
     });
+    renderer.setClearColor(0x070504, 1);
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.15;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0c0907, 0.55);
+    scene.fog = new THREE.FogExp2(0x090705, 0.35);
 
-    camera = new THREE.PerspectiveCamera(36, 1, 0.01, 20);
-    camera.position.set(0.05, 0.22, 0.62);
-    camera.lookAt(0.06, 0.12, 0);
+    // Image-based lighting for glass reflections
+    pmrem = new THREE.PMREMGenerator(renderer);
+    envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+    scene.environment = envRT.texture;
 
-    const amb = new THREE.AmbientLight(0xffe2c0, 0.45);
+    camera = new THREE.PerspectiveCamera(32, 1, 0.01, 30);
+    camera.position.set(0.08, 0.2, 0.55);
+    camera.lookAt(0.08, 0.11, 0);
+
+    const amb = new THREE.AmbientLight(0xffe6cc, 0.25);
     scene.add(amb);
-    const key = new THREE.DirectionalLight(0xffd4a0, 1.35);
-    key.position.set(-0.4, 0.8, 0.5);
+    const key = new THREE.DirectionalLight(0xffe0b8, 2.1);
+    key.position.set(-0.55, 1.1, 0.65);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 0.1;
+    key.shadow.camera.far = 4;
+    key.shadow.camera.left = -0.6;
+    key.shadow.camera.right = 0.6;
+    key.shadow.camera.top = 0.6;
+    key.shadow.camera.bottom = -0.6;
+    key.shadow.bias = -0.0002;
     scene.add(key);
-    const fill = new THREE.PointLight(0x88aaff, 0.35, 3);
-    fill.position.set(0.5, 0.3, 0.4);
+    const fill = new THREE.PointLight(0xa8c4ff, 0.55, 4);
+    fill.position.set(0.55, 0.35, 0.45);
     scene.add(fill);
-    const rim = new THREE.PointLight(0xffaa66, 0.55, 2.5);
-    rim.position.set(-0.2, 0.35, -0.3);
-    scene.add(rim);
+    const warm = new THREE.SpotLight(0xffb070, 18, 3.5, Math.PI / 5, 0.45, 1.2);
+    warm.position.set(0.1, 0.95, 0.35);
+    warm.target.position.set(0.08, 0.05, 0);
+    scene.add(warm);
+    scene.add(warm.target);
 
-    // Photoreal bar backdrop
     const bgTex = textureLoader.load(`${baseUrl()}images/bar-bg.jpg`);
     bgTex.colorSpace = THREE.SRGBColorSpace;
     bgMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.4, 1.5),
-      new THREE.MeshBasicMaterial({ map: bgTex }),
+      new THREE.PlaneGeometry(3.2, 2.0),
+      new THREE.MeshStandardMaterial({ map: bgTex, roughness: 0.9, metalness: 0, emissive: 0x22180f, emissiveIntensity: 0.15 }),
     );
-    bgMesh.position.set(0.05, 0.35, -0.75);
+    bgMesh.position.set(0.1, 0.42, -0.95);
     scene.add(bgMesh);
 
-    // Darkening plane for contrast
     const veil = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.5, 1.6),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 }),
+      new THREE.PlaneGeometry(3.3, 2.1),
+      new THREE.MeshBasicMaterial({ color: 0x050302, transparent: true, opacity: 0.28 }),
     );
-    veil.position.set(0.05, 0.35, -0.74);
+    veil.position.set(0.1, 0.42, -0.94);
     scene.add(veil);
 
-    // Bar counter
+    // Thick wooden bar top
     tableMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.06, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x3a2416, roughness: 0.55, metalness: 0.05 }),
+      new THREE.BoxGeometry(1.6, 0.07, 0.7),
+      new THREE.MeshStandardMaterial({
+        color: 0x4a2e1c,
+        roughness: 0.42,
+        metalness: 0.08,
+        envMapIntensity: 0.35,
+      }),
     );
-    tableMesh.position.set(0.05, -0.03, 0.05);
+    tableMesh.position.set(0.1, -0.035, 0.08);
     tableMesh.receiveShadow = true;
+    tableMesh.castShadow = true;
     scene.add(tableMesh);
+
+    // Soft contact shadow disc under glass
+    const contact = new THREE.Mesh(
+      new THREE.CircleGeometry(0.09, 48),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45 }),
+    );
+    contact.rotation.x = -Math.PI / 2;
+    contact.position.set(0, 0.001, 0);
+    scene.add(contact);
 
     glassGroup = new THREE.Group();
     glassGroup.position.set(0, 0, 0);
@@ -335,16 +378,24 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
     streamMat = new THREE.MeshPhysicalMaterial({
       color: hexColor(state.selectedBeer.liquidMid),
-      roughness: 0.15,
+      roughness: 0.08,
       metalness: 0,
       transparent: true,
-      opacity: 0.85,
-      transmission: 0.2,
+      opacity: 0.9,
+      transmission: 0.45,
+      thickness: 0.5,
+      ior: 1.33,
     });
-    streamMesh = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
-      new THREE.Vector3(),
-      new THREE.Vector3(0, -0.05, 0),
-    ]), 20, 0.004, 8, false), streamMat);
+    streamMesh = new THREE.Mesh(
+      new THREE.TubeGeometry(
+        new THREE.CatmullRomCurve3([new THREE.Vector3(), new THREE.Vector3(0, -0.05, 0)]),
+        20,
+        0.004,
+        8,
+        false,
+      ),
+      streamMat,
+    );
     streamMesh.visible = false;
     scene.add(streamMesh);
   }
@@ -585,6 +636,8 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     if (frameId != null) globalThis.cancelAnimationFrame?.(frameId);
     resizeObserver?.disconnect?.();
     removeListeners.splice(0).forEach((fn) => fn());
+    envRT?.dispose?.();
+    pmrem?.dispose?.();
     renderer?.dispose?.();
   }
 
