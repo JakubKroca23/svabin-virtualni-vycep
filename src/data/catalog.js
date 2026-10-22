@@ -23,6 +23,7 @@ export async function loadCatalog() {
     return { ...shapeCatalog(data), source: 'live' };
   } catch {
     const res = await fetch(FALLBACK_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return { ...shapeCatalog(data), source: 'fallback' };
   }
