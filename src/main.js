@@ -74,12 +74,12 @@ function renderSimulatorView(root) {
             </dl>
           </div>
           <div class="border-t border-svabin-border pt-4 space-y-3">
-            <div class="flex items-center justify-between"><span class="text-xs font-semibold text-svabin-cream">Vezmi si ho domů (balení 6 ks)</span><span class="text-[11px] text-svabin-greentext">Skladem</span></div>
+            <div class="flex items-center justify-between"><span class="text-xs font-semibold text-svabin-cream">Vezmi si ho domů (balení 6 ks)</span><span id="stockPurchaseStatus" class="text-[11px] text-svabin-greentext">Skladem</span></div>
             <div class="grid grid-cols-2 gap-2 text-xs">
               <button id="buySubBtn" type="button"><div class="flex items-center justify-between"><span class="font-semibold text-svabin-cream">Předplatné</span><span class="text-[10px] px-1.5 py-0.5 rounded bg-svabin-amber/20 text-svabin-amber font-semibold">-15 %</span></div><div id="priceSubText" class="text-sm font-bold text-svabin-cream mt-1"></div><div class="text-[10px] text-svabin-muted">+ doprava zdarma</div></button>
               <button id="buyOnceBtn" type="button"><div class="font-semibold text-svabin-sand">Jednorázově</div><div id="priceOnceText" class="text-sm font-bold text-svabin-cream mt-1"></div><div id="pricePerUnitText" class="text-[10px] text-svabin-muted"></div></button>
             </div>
-            <button id="addSelectedBtn" type="button" class="w-full py-2.5 px-4 rounded-md bg-svabin-amber hover:bg-svabin-amberhover text-svabin-bg font-semibold text-xs sm:text-sm transition flex items-center justify-center gap-2"><span>Do košíku</span><span>·</span><span id="btnBuyPriceLabel"></span></button>
+            <button id="addSelectedBtn" type="button" class="w-full py-2.5 px-4 rounded-md bg-svabin-amber hover:bg-svabin-amberhover text-svabin-bg font-semibold text-xs sm:text-sm transition flex items-center justify-center gap-2"><span id="btnBuyText">Do košíku</span><span id="btnBuyDivider">·</span><span id="btnBuyPriceLabel"></span></button>
           </div>
         </div>
       </div>

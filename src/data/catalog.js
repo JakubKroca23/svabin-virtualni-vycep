@@ -1,5 +1,6 @@
 // src/data/catalog.js
 import { getPourProfile } from './pourProfiles.js';
+import { safeCatalogImageUrl } from '../ui/dom.js';
 
 const LIVE_URL = 'https://svabin.com/catalog.json';
 const FALLBACK_URL = `${import.meta.env.BASE_URL}data/catalog.fallback.json`;
@@ -44,7 +45,7 @@ function shapeCatalog(data) {
       style: b.style || '',
       subtitle: b.style || '',
       description: b.description || '',
-      image: b.image || null,
+      image: safeCatalogImageUrl(b.image) || null,
       abv: b.abv_percent != null ? `${String(b.abv_percent).replace('.', ',')} %` : '',
       epm: b.plato != null ? `${b.plato}°` : '',
       ibu: b.ibu != null ? `${b.ibu} IBU` : '',

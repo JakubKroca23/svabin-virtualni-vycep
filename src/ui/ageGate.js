@@ -25,7 +25,7 @@ export function renderAgeGate({ onAccept } = {}) {
           Ano, je mi 18+
         </button>
         <a href="https://svabin.com/" class="py-3 px-4 rounded-md bg-svabin-elevated hover:bg-svabin-border text-svabin-sand font-semibold text-sm transition">
-          Odejit na svabin.com
+          Odejít na svabin.com
         </a>
       </div>
     </div>

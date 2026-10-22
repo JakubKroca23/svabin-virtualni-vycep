@@ -117,7 +117,7 @@ describe('createPourSimulator', () => {
     expect(onHud).toHaveBeenCalledWith(expect.objectContaining({
       liquidMl: '0 ml',
       foamPct: '0 %',
-      pourStyle: 'Zavreno',
+      pourStyle: 'Zavřeno',
       canSip: false,
     }));
 

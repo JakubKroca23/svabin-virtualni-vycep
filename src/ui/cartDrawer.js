@@ -1,3 +1,10 @@
+import { escapeHtml } from './dom.js';
+
+function formatCzk(value) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toLocaleString('cs-CZ') : '0';
+}
+
 export function renderCartDrawer(root, { cart, shipping = {}, onClose, onCheckout } = {}) {
   root.innerHTML = `
     <div id="cartDrawerBackdrop" class="fixed inset-0 bg-black/65 z-50 hidden opacity-0 transition-opacity"></div>
@@ -70,13 +77,13 @@ export function updateCartDrawer(cart, shipping = {}) {
       (item) => `
         <div class="bg-svabin-bg border border-svabin-border rounded-md p-3 flex items-center justify-between gap-2">
           <div>
-            <div class="font-serif font-semibold text-sm text-svabin-cream">${item.name}</div>
-            <div class="text-xs text-svabin-muted">6 ks · ${item.mode === 'sub' ? 'Předplatné (-15 %)' : 'Jednorázově'} · <strong class="text-svabin-sand">${item.price.toLocaleString('cs-CZ')} Kč</strong></div>
+            <div class="font-serif font-semibold text-sm text-svabin-cream">${escapeHtml(item.name)}</div>
+            <div class="text-xs text-svabin-muted">6 ks · ${item.mode === 'sub' ? 'Předplatné (-15 %)' : 'Jednorázově'} · <strong class="text-svabin-sand">${formatCzk(item.price)} Kč</strong></div>
           </div>
           <div class="flex items-center gap-2">
-            <button type="button" data-qty-key="${item.key}" data-delta="-1" class="w-7 h-7 rounded bg-svabin-surface border border-svabin-border text-xs font-bold text-svabin-cream">-</button>
-            <span class="text-xs font-semibold w-4 text-center">${item.qty}</span>
-            <button type="button" data-qty-key="${item.key}" data-delta="1" class="w-7 h-7 rounded bg-svabin-surface border border-svabin-border text-xs font-bold text-svabin-cream">+</button>
+            <button type="button" data-qty-key="${escapeHtml(item.key)}" data-delta="-1" class="w-7 h-7 rounded bg-svabin-surface border border-svabin-border text-xs font-bold text-svabin-cream">-</button>
+            <span class="text-xs font-semibold w-4 text-center">${escapeHtml(item.qty)}</span>
+            <button type="button" data-qty-key="${escapeHtml(item.key)}" data-delta="1" class="w-7 h-7 rounded bg-svabin-surface border border-svabin-border text-xs font-bold text-svabin-cream">+</button>
           </div>
         </div>
       `,

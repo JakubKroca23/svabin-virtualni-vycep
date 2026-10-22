@@ -88,13 +88,13 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
   function emitHud() {
     const total = Math.round(state.liquidMl + state.foamMl);
     const foamPct = total > 15 ? Math.round((state.foamMl / total) * 100) : 0;
-    let pourStyle = state.isOpened ? 'Otevreno' : 'Zavreno';
+    let pourStyle = state.isOpened ? 'Otevřeno' : 'Zavřeno';
     if (total >= 30) {
-      if (foamPct > 68) pourStyle = 'Mliko';
-      else if (total < 360 && foamPct >= 25) pourStyle = 'Snyt';
+      if (foamPct > 68) pourStyle = 'Mlíko';
+      else if (total < 360 && foamPct >= 25) pourStyle = 'Šnyt';
       else if (foamPct >= 14 && foamPct <= 34) pourStyle = 'Hladinka';
-      else if (foamPct < 14) pourStyle = 'Bez cepice';
-      else pourStyle = 'Vysoka pena';
+      else if (foamPct < 14) pourStyle = 'Bez čepice';
+      else pourStyle = 'Vysoká pěna';
     }
 
     callSafely(onHud, {
