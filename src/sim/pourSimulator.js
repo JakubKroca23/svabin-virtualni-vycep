@@ -76,6 +76,34 @@ function drawCoverImage(ctx, img, x, y, w, h) {
   return true;
 }
 
+function drawCoverImageFull(ctx, img, x, y, w, h) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+  const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  ctx.drawImage(img, x + (w - dw) * 0.5, y + (h - dh) * 0.5, dw, dh);
+  return true;
+}
+
+let barBgEntry = null;
+
+function getBarBackground() {
+  if (typeof Image === 'undefined') return null;
+  if (barBgEntry?.ready) return barBgEntry.img;
+  if (barBgEntry) return null;
+  const img = new Image();
+  barBgEntry = { img, ready: false };
+  const base = typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL ? import.meta.env.BASE_URL : '/';
+  img.onload = () => {
+    barBgEntry.ready = true;
+  };
+  img.onerror = () => {
+    barBgEntry = null;
+  };
+  img.src = `${base}images/bar-bg.jpg`;
+  return null;
+}
+
 function createInitialState() {
   const waveCount = 28;
   return {
@@ -454,46 +482,54 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
     ctx.clearRect(0, 0, W, H);
 
-    // Dim bar back-wall with warm key light (no flat cartoon vignette)
-    const wallGrad = ctx.createRadialGradient(W * 0.38, H * 0.22, 20, W * 0.42, H * 0.45, Math.max(W, H) * 0.85);
-    wallGrad.addColorStop(0, '#3a2c20');
-    wallGrad.addColorStop(0.35, '#1c1612');
-    wallGrad.addColorStop(0.75, '#0f0c0a');
-    wallGrad.addColorStop(1, '#070605');
-    ctx.fillStyle = wallGrad;
-    ctx.fillRect(0, 0, W, H);
-
-    // Soft overhead cone
-    const cone = ctx.createRadialGradient(W * 0.4, H * 0.08, 8, W * 0.4, H * 0.55, H * 0.7);
-    cone.addColorStop(0, 'rgba(255, 210, 140, 0.12)');
-    cone.addColorStop(0.45, 'rgba(180, 120, 50, 0.04)');
-    cone.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = cone;
-    ctx.fillRect(0, 0, W, H);
-
     const tableY = H * 0.84;
-    const tableGrad = ctx.createLinearGradient(0, tableY - 8, 0, H);
-    tableGrad.addColorStop(0, '#4a3424');
-    tableGrad.addColorStop(0.12, '#2c1d14');
-    tableGrad.addColorStop(0.55, '#18100b');
-    tableGrad.addColorStop(1, '#090605');
+    const barBg = getBarBackground();
+    if (barBg) {
+      ctx.save();
+      drawCoverImageFull(ctx, barBg, 0, 0, W, tableY + 20);
+      // Darken + warm grade so glass/vessel stay readable
+      const grade = ctx.createLinearGradient(0, 0, 0, tableY);
+      grade.addColorStop(0, 'rgba(8, 5, 3, 0.55)');
+      grade.addColorStop(0.45, 'rgba(12, 8, 5, 0.42)');
+      grade.addColorStop(1, 'rgba(6, 4, 2, 0.72)');
+      ctx.fillStyle = grade;
+      ctx.fillRect(0, 0, W, tableY + 20);
+      const spotlight = ctx.createRadialGradient(W * 0.4, H * 0.35, 30, W * 0.4, H * 0.4, Math.max(W, H) * 0.55);
+      spotlight.addColorStop(0, 'rgba(255, 200, 120, 0.08)');
+      spotlight.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+      ctx.fillStyle = spotlight;
+      ctx.fillRect(0, 0, W, tableY + 20);
+      ctx.restore();
+    } else {
+      const wallGrad = ctx.createRadialGradient(W * 0.38, H * 0.22, 20, W * 0.42, H * 0.45, Math.max(W, H) * 0.85);
+      wallGrad.addColorStop(0, '#3a2c20');
+      wallGrad.addColorStop(0.35, '#1c1612');
+      wallGrad.addColorStop(1, '#070605');
+      ctx.fillStyle = wallGrad;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // Bar counter / table in front of photo
+    const tableGrad = ctx.createLinearGradient(0, tableY - 10, 0, H);
+    tableGrad.addColorStop(0, '#5a3d28');
+    tableGrad.addColorStop(0.08, '#3a2618');
+    tableGrad.addColorStop(0.35, '#22160f');
+    tableGrad.addColorStop(1, '#0a0604');
     ctx.fillStyle = tableGrad;
     ctx.fillRect(0, tableY, W, H - tableY);
-    // Subtle wood grain
     ctx.save();
-    ctx.globalAlpha = 0.07;
-    for (let i = 0; i < 14; i += 1) {
-      const y = tableY + 6 + i * ((H - tableY) / 14);
-      ctx.strokeStyle = i % 2 === 0 ? '#8a6240' : '#1a100a';
-      ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.1;
+    for (let i = 0; i < 12; i += 1) {
+      const y = tableY + 5 + i * ((H - tableY) / 12);
+      ctx.strokeStyle = i % 2 === 0 ? '#a07850' : '#140c08';
       ctx.beginPath();
-      ctx.moveTo(0, y + Math.sin(i * 1.7) * 1.5);
-      ctx.bezierCurveTo(W * 0.35, y - 2, W * 0.65, y + 3, W, y);
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(W * 0.4, y - 2, W * 0.7, y + 2, W, y);
       ctx.stroke();
     }
     ctx.restore();
-    ctx.fillStyle = 'rgba(255, 230, 190, 0.08)';
-    ctx.fillRect(0, tableY, W, 1);
+    ctx.fillStyle = 'rgba(255, 220, 170, 0.12)';
+    ctx.fillRect(0, tableY, W, 1.5);
 
     const scale = Math.min(1.12, Math.max(0.72, Math.min(W / 540, H / 540)));
     const glassCenterX = W * 0.39;
@@ -546,34 +582,93 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     const localTargetX = state.isGlassTiltedMode ? 18 * scale : 0;
     const targetX = gx + (localTargetX * Math.cos(glassTiltRad) - localTargetY * Math.sin(glassTiltRad));
     const targetY = gy + (localTargetX * Math.sin(glassTiltRad) + localTargetY * Math.cos(glassTiltRad));
-    const streamWidth = Math.max(2.5, Math.min(11, state.flowRate * 3.4)) * scale;
-    const time = (globalThis.performance?.now?.() || Date.now()) * 0.014;
+    const baseWidth = Math.max(2.2, Math.min(13, state.flowRate * 3.8)) * scale;
+    const time = (globalThis.performance?.now?.() || Date.now()) * 0.001;
+
+    const pointOnStream = (t, wobbleAmp) => {
+      const wobble = Math.sin(time * 18 + t * 9) * wobbleAmp + Math.sin(time * 31 + t * 14) * wobbleAmp * 0.35;
+      const x = sx + (targetX - sx) * t + wobble;
+      const y = sy + (targetY - sy) * (t * t * 0.35 + t * 0.65);
+      return { x, y };
+    };
 
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    const streamGrad = ctx.createLinearGradient(sx, sy, targetX, targetY);
-    streamGrad.addColorStop(0, beer.liquidBottom);
-    streamGrad.addColorStop(0.35, beer.liquidMid);
-    streamGrad.addColorStop(0.75, beer.liquidTop);
-    streamGrad.addColorStop(1, 'rgba(255, 248, 230, 0.55)');
-    ctx.strokeStyle = streamGrad;
-    ctx.lineWidth = streamWidth;
+    // Soft shadow under stream
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+    ctx.lineWidth = baseWidth * 1.35;
     ctx.lineCap = 'round';
-    ctx.globalAlpha = 0.92;
     ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    const cpX = sx + (targetX - sx) * 0.52 + Math.sin(time) * 1.8;
-    const cpY = sy + (targetY - sy) * 0.28;
-    ctx.quadraticCurveTo(cpX, cpY, targetX, targetY);
+    ctx.moveTo(sx + 2, sy + 3);
+    for (let i = 1; i <= 16; i += 1) {
+      const p = pointOnStream(i / 16, 1.2 * scale);
+      ctx.lineTo(p.x + 2, p.y + 3);
+    }
     ctx.stroke();
-    ctx.globalCompositeOperation = 'source-over';
+
+    // Core amber body (multiple filaments)
+    const filaments = [
+      { offset: 0, width: 1, alpha: 0.95 },
+      { offset: -0.55, width: 0.45, alpha: 0.55 },
+      { offset: 0.5, width: 0.4, alpha: 0.5 },
+    ];
+    filaments.forEach((f) => {
+      const grad = ctx.createLinearGradient(sx, sy, targetX, targetY);
+      grad.addColorStop(0, beer.liquidBottom);
+      grad.addColorStop(0.4, beer.liquidMid);
+      grad.addColorStop(0.8, beer.liquidTop);
+      grad.addColorStop(1, beer.foamTone);
+      ctx.strokeStyle = grad;
+      ctx.globalAlpha = f.alpha;
+      ctx.lineWidth = baseWidth * f.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      const start = pointOnStream(0, 0);
+      ctx.moveTo(start.x + f.offset * baseWidth, start.y);
+      for (let i = 1; i <= 20; i += 1) {
+        const p = pointOnStream(i / 20, (2.4 + state.flowRate * 0.6) * scale);
+        ctx.lineTo(p.x + f.offset * baseWidth, p.y);
+      }
+      ctx.stroke();
+    });
+
+    // Specular ribbon
     ctx.globalAlpha = 0.55;
-    ctx.strokeStyle = 'rgba(255, 250, 240, 0.55)';
-    ctx.lineWidth = streamWidth * 0.22;
+    ctx.strokeStyle = 'rgba(255, 250, 235, 0.7)';
+    ctx.lineWidth = Math.max(1, baseWidth * 0.18);
     ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.quadraticCurveTo(cpX - 1.2, cpY, targetX, targetY);
+    ctx.moveTo(sx - baseWidth * 0.15, sy);
+    for (let i = 1; i <= 18; i += 1) {
+      const p = pointOnStream(i / 18, 1.6 * scale);
+      ctx.lineTo(p.x - baseWidth * 0.18, p.y);
+    }
     ctx.stroke();
+
+    // Droplet spray near spout + splash at impact
+    ctx.globalAlpha = 1;
+    const dropletCount = Math.min(18, Math.floor(state.flowRate * 6));
+    for (let i = 0; i < dropletCount; i += 1) {
+      const t = 0.05 + Math.random() * 0.35;
+      const p = pointOnStream(t, 3.5 * scale);
+      const r = (0.6 + Math.random() * 1.8) * scale;
+      ctx.fillStyle = Math.random() > 0.45 ? beer.liquidTop : beer.foamTone;
+      ctx.globalAlpha = 0.35 + Math.random() * 0.45;
+      ctx.beginPath();
+      ctx.arc(p.x + (Math.random() - 0.5) * 8 * scale, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Impact splash crown
+    ctx.globalAlpha = Math.min(0.75, state.flowRate * 0.22);
+    for (let i = 0; i < 7; i += 1) {
+      const a = -Math.PI / 2 + (i - 3) * 0.22;
+      const len = (6 + state.flowRate * 3 + Math.sin(time * 40 + i) * 2) * scale;
+      ctx.strokeStyle = beer.foamTone;
+      ctx.lineWidth = 1.4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(targetX, targetY);
+      ctx.lineTo(targetX + Math.cos(a) * len, targetY + Math.sin(a) * len * 0.55);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -601,71 +696,131 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     ctx.translate(gx, gy);
     ctx.rotate(glassTiltRad);
 
+    const thickness = 5.5 * scale;
+    const rimY = -glassH * 0.985;
+    const rimOuterW = getGlassProfile(0.985, state.glassType, glassHalfW);
+    const rimInnerW = Math.max(6, rimOuterW - thickness * 0.85);
+    const rimEllipseH = 7.5 * scale;
+    const baseY = 0;
+    const baseOuterW = getGlassProfile(0.02, state.glassType, glassHalfW);
+
+    // Foot / base ellipse (3D contact with table)
+    ctx.save();
+    const footGrad = ctx.createRadialGradient(0, baseY, 2, 0, baseY, baseOuterW * 1.15);
+    footGrad.addColorStop(0, 'rgba(255,255,255,0.18)');
+    footGrad.addColorStop(0.55, 'rgba(200,200,200,0.08)');
+    footGrad.addColorStop(1, 'rgba(0,0,0,0.25)');
+    ctx.fillStyle = footGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, baseY + 2 * scale, baseOuterW * 1.08, 8 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Mug handle with depth (behind / in front suggestion)
     if (state.glassType === 'mug') {
       ctx.save();
-      ctx.strokeStyle = 'rgba(243, 237, 226, 0.16)';
-      ctx.lineWidth = 13 * scale;
+      ctx.strokeStyle = 'rgba(220, 220, 220, 0.22)';
+      ctx.lineWidth = 14 * scale;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(glassHalfW * 0.88, -glassH * 0.76);
-      ctx.bezierCurveTo(glassHalfW * 1.52, -glassH * 0.78, glassHalfW * 1.52, -glassH * 0.24, glassHalfW * 0.86, -glassH * 0.26);
+      ctx.moveTo(glassHalfW * 0.9, -glassH * 0.74);
+      ctx.bezierCurveTo(glassHalfW * 1.58, -glassH * 0.76, glassHalfW * 1.58, -glassH * 0.28, glassHalfW * 0.88, -glassH * 0.3);
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
-      ctx.lineWidth = 3 * scale;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 3.5 * scale;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(glassHalfW * 0.92, -glassH * 0.72);
+      ctx.bezierCurveTo(glassHalfW * 1.48, -glassH * 0.72, glassHalfW * 1.48, -glassH * 0.32, glassHalfW * 0.9, -glassH * 0.32);
       ctx.stroke();
       ctx.restore();
     }
 
+    // Outer glass shell (translucent volume)
     buildGlassPath(glassH, glassHalfW);
-    const glassBodyGrad = ctx.createLinearGradient(-glassHalfW, 0, glassHalfW, 0);
-    glassBodyGrad.addColorStop(0, 'rgba(255, 252, 245, 0.13)');
-    glassBodyGrad.addColorStop(0.2, 'rgba(255, 252, 245, 0.03)');
-    glassBodyGrad.addColorStop(0.8, 'rgba(255, 252, 245, 0.03)');
-    glassBodyGrad.addColorStop(1, 'rgba(255, 252, 245, 0.16)');
-    ctx.fillStyle = glassBodyGrad;
+    const shellGrad = ctx.createLinearGradient(-glassHalfW, 0, glassHalfW, 0);
+    shellGrad.addColorStop(0, 'rgba(210, 230, 255, 0.16)');
+    shellGrad.addColorStop(0.18, 'rgba(255, 255, 255, 0.05)');
+    shellGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.02)');
+    shellGrad.addColorStop(0.82, 'rgba(255, 255, 255, 0.06)');
+    shellGrad.addColorStop(1, 'rgba(180, 200, 230, 0.18)');
+    ctx.fillStyle = shellGrad;
     ctx.fill();
 
+    // Inner cavity + liquid (clipped to inner wall for thickness)
     ctx.save();
-    buildGlassPath(glassH, glassHalfW, 4.5 * scale);
+    buildGlassPath(glassH, glassHalfW, thickness);
     ctx.clip();
     drawGlassContents(glassH, glassHalfW, glassTiltRad, scale, beer);
+    // Inner wall refraction tint
+    const innerTint = ctx.createLinearGradient(-glassHalfW, 0, glassHalfW, 0);
+    innerTint.addColorStop(0, 'rgba(255,255,255,0.08)');
+    innerTint.addColorStop(0.5, 'rgba(255,255,255,0)');
+    innerTint.addColorStop(1, 'rgba(120,160,200,0.1)');
+    ctx.fillStyle = innerTint;
+    ctx.fillRect(-glassHalfW * 1.2, -glassH, glassHalfW * 2.4, glassH + 20);
     ctx.restore();
 
+    // Glass wall thickness band (outer stroke vs inner)
     buildGlassPath(glassH, glassHalfW);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-    ctx.lineWidth = 1.35 * scale;
-    ctx.stroke();
-
-    // Thick glass rim
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
-    ctx.lineWidth = 3.2 * scale;
-    ctx.beginPath();
-    const rimW = getGlassProfile(0.97, state.glassType, glassHalfW);
-    ctx.moveTo(-rimW, -glassH * 0.97);
-    ctx.lineTo(rimW, -glassH * 0.97);
+    ctx.lineWidth = 1.6 * scale;
+    ctx.stroke();
+    buildGlassPath(glassH, glassHalfW, thickness);
+    ctx.strokeStyle = 'rgba(180, 200, 220, 0.22)';
+    ctx.lineWidth = 1.1 * scale;
     ctx.stroke();
 
-    const reflGrad = ctx.createLinearGradient(0, -glassH * 0.92, 0, -glassH * 0.2);
-    reflGrad.addColorStop(0, 'rgba(255, 255, 255, 0.38)');
-    reflGrad.addColorStop(0.4, 'rgba(255, 255, 255, 0.14)');
+    // 3D rim: outer + inner ellipses (looks into the glass)
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.beginPath();
+    ctx.ellipse(0, rimY, rimOuterW, rimEllipseH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(10, 12, 16, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, rimY + 0.8 * scale, rimInnerW, rimEllipseH * 0.72, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 2.2 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, rimY, rimOuterW, rimEllipseH, 0, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.lineWidth = 1.4 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, rimY + 1.2 * scale, rimInnerW, rimEllipseH * 0.7, 0, 0.15, Math.PI - 0.15);
+    ctx.stroke();
+    ctx.restore();
+
+    // Primary specular (left) + secondary (right) for 3D cylinder
+    const reflGrad = ctx.createLinearGradient(0, -glassH * 0.95, 0, -glassH * 0.15);
+    reflGrad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+    reflGrad.addColorStop(0.35, 'rgba(255, 255, 255, 0.18)');
     reflGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.strokeStyle = reflGrad;
-    ctx.lineWidth = 5.5 * scale;
+    ctx.lineWidth = 6 * scale;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(-glassHalfW * 0.72, -glassH * 0.88);
-    ctx.lineTo(-glassHalfW * 0.66, -glassH * 0.22);
+    ctx.moveTo(-glassHalfW * 0.7, -glassH * 0.9);
+    ctx.quadraticCurveTo(-glassHalfW * 0.74, -glassH * 0.55, -glassHalfW * 0.62, -glassH * 0.2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 2.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(glassHalfW * 0.58, -glassH * 0.82);
+    ctx.lineTo(glassHalfW * 0.55, -glassH * 0.28);
     ctx.stroke();
 
-    // Subtle etched logo (not a cartoon sticker)
+    // Etched brand
     ctx.save();
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = '#f3ede2';
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#f5f0e6';
     ctx.font = `500 ${Math.round(11 * scale)}px Fraunces, Georgia, serif`;
     ctx.textAlign = 'center';
-    ctx.fillText('Švabín', 0, -glassH * 0.62);
-    ctx.font = `400 ${Math.round(6.5 * scale)}px DM Sans, system-ui, sans-serif`;
-    ctx.fillText('1567', 0, -glassH * 0.62 + 10 * scale);
+    ctx.fillText('Švabín', 0, -glassH * 0.58);
     ctx.restore();
     ctx.restore();
   }
@@ -1106,6 +1261,7 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
   initCondensation();
   initFoamCells();
+  getBarBackground();
   setupEvents();
   if (typeof globalThis.ResizeObserver === 'function') {
     resizeObserver = new globalThis.ResizeObserver(resizeCanvas);
