@@ -11,6 +11,7 @@ function createMockContext() {
     'clearRect',
     'clip',
     'closePath',
+    'drawImage',
     'ellipse',
     'fill',
     'fillRect',
