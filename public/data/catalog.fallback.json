@@ -1,0 +1,747 @@
+{
+ "generated": "2026-10-22T10:20:01.422Z",
+ "note": "Prices include VAT. Availability is the stock count taken at `generated`, the same count the shop itself shows.",
+ "seller": {
+  "name": "Pivovar Švabín",
+  "legal_name": "Švabín s.r.o.",
+  "company_id": "26927462",
+  "vat_id": "CZ26927462",
+  "email": "info@svabin.cz",
+  "phone": "+420 725 836 414",
+  "address": "Plískov 8, 338 08 Zbiroh, CZ",
+  "url": "https://svabin.com/",
+  "same_as": [
+   "https://www.facebook.com/pivovarsvabin",
+   "https://www.instagram.com/pivovarsvabin/",
+   "https://www.youtube.com/@Svabin",
+   "https://untappd.com/Svabin/",
+   "https://www.ratebeer.com/brewers/goto/51619/"
+  ]
+ },
+ "currency": "CZK",
+ "age_limit": 18,
+ "shipping": {
+  "countries": [
+   "CZ",
+   "SK",
+   "DE",
+   "AT",
+   "PL",
+   "HU"
+  ],
+  "carrier": "Zásilkovna (Packeta)",
+  "average_days_order_to_delivery": {
+   "from": 1,
+   "to": 2
+  },
+  "free_from": 1500,
+  "pickup_point_or_box": 99,
+  "home_address": 149,
+  "currency": "CZK"
+ },
+ "subscription": {
+  "discount_percent": 15,
+  "every_weeks": [
+   1,
+   2,
+   3,
+   4,
+   6,
+   8
+  ],
+  "cancel": "any time, by e-mail to info@svabin.cz"
+ },
+ "single_piece_price_drops_from": 10,
+ "beers": [
+  {
+   "id": "polednice",
+   "name": "Polednice",
+   "style": "Hazy APA 10°",
+   "abv_percent": 4,
+   "plato": 10,
+   "ibu": "10",
+   "description": "Zakalená APA. Nese vůni chmele a ovocnou šťavnatost, ale je dost lehká na to, aby se dala pít v poledním horku, přesně tehdy, kdy Polednice chodí.",
+   "url": "https://svabin.com/beers/polednice/",
+   "markdown": "https://svabin.com/beers/polednice.md",
+   "image": "https://svabin.com/assets/beer-polednice.webp",
+   "offers": [
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 849,
+     "currency": "CZK",
+     "in_stock": false
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 149,
+     "currency": "CZK",
+     "in_stock": false
+    }
+   ]
+  },
+  {
+   "id": "faun",
+   "name": "Faun",
+   "style": "Světlé výčepní 10°",
+   "abv_percent": 4,
+   "plato": 10.3,
+   "ibu": "35",
+   "description": "Světlé výčepní pivo uvařené tak, aby mu nechyběla chuť ani hořkost. Čtyři druhy sladu doplňuje dvojice českých chmelů Vital a Žatecký poloraný červeňák. Plnější sladový základ, výraznější hořkost a čistý, osvěžující závěr. Lahodná chuť a výrazná hořkost, která nadchne každého milovníka dobrého piva.",
+   "url": "https://svabin.com/beers/faun/",
+   "markdown": "https://svabin.com/beers/faun.md",
+   "image": "https://svabin.com/assets/beer-faun.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 449,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 589,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 79,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 99,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "bard",
+   "name": "Bard",
+   "style": "Světlý ležák 11°",
+   "abv_percent": 4.5,
+   "plato": 11,
+   "ibu": "40",
+   "description": "Vlajková loď pivovaru. Za studena chmelený 11° světlý ležák, který spojuje tři slady a tři vybrané chmele: Agnus, Harmonie a Saaz Shine. Je osvěžující a skvěle pitelný.",
+   "url": "https://svabin.com/beers/bard/",
+   "markdown": "https://svabin.com/beers/bard.md",
+   "image": "https://svabin.com/assets/beer-bard.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 449,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 589,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 79,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 99,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "satyr",
+   "name": "Satyr",
+   "style": "Světlý ležák 12°",
+   "abv_percent": 5,
+   "plato": 12,
+   "ibu": "40",
+   "description": "Výborný třírmutový 12° světlý ležák pro hédonisty. Tři rmuty jsou starý a zdlouhavý postup, který dnes už skoro nikdo nevaří, a na chuti je to poznat. Spojuje dva slady a dva vybrané chmele: Rubín a Žatecký poloraný červeňák. Jeho lahodná chuť a výrazná hořkost nadchne každého milovníka dobrého piva.",
+   "url": "https://svabin.com/beers/satyr/",
+   "markdown": "https://svabin.com/beers/satyr.md",
+   "image": "https://svabin.com/assets/beer-satyr.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 449,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 589,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 79,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 99,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "stinovlk",
+   "name": "Stínovlk",
+   "style": "Polotmavý ležák 11°",
+   "abv_percent": 4.5,
+   "plato": 11,
+   "ibu": "30",
+   "description": "V temnotě se rodí chuť. Polotmavý jedenáctistupňový ležák se silnou karamelovou chutí a lehkými čokoládovými tóny. Vyladěný chmely Rubín, Harmonie a Žatecký poloraný červeňák. Pivo pro dlouhé večery.",
+   "url": "https://svabin.com/beers/stinovlk/",
+   "markdown": "https://svabin.com/beers/stinovlk.md",
+   "image": "https://svabin.com/assets/beer-stinovlk.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 449,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 589,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 79,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 99,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "leshy",
+   "name": "Leshy",
+   "style": "TDH Double IPA 17°",
+   "abv_percent": 7.5,
+   "plato": 17.1,
+   "ibu": "65–70",
+   "description": "Za studena chmelená double IPA a divoký lesní duch v plné síle chmele. Je silná, výrazná a má intenzivní vůni po ovoci. Chmely Citra, Cascade a Simcoe.",
+   "url": "https://svabin.com/beers/leshy/",
+   "markdown": "https://svabin.com/beers/leshy.md",
+   "image": "https://svabin.com/assets/beer-leshy.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 799,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 1149,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 139,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 199,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "kodama",
+   "name": "Kodama",
+   "style": "Session IPL 8°",
+   "abv_percent": 3,
+   "plato": 8,
+   "ibu": "30",
+   "description": "Tichý lesní duch v lehkém kabátě. Lehce hořké pivo, ideální na cyklovýlety, k bazénu nebo na zahrádku během parných letních dnů. Vyladěné chmely Idaho 7, Krush a Nelson Sauvin.",
+   "url": "https://svabin.com/beers/kodama/",
+   "markdown": "https://svabin.com/beers/kodama.md",
+   "image": "https://svabin.com/assets/beer-kodama.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 549,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 95,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "puk",
+   "name": "Puk",
+   "style": "Sour Ale 11°",
+   "abv_percent": 4.5,
+   "plato": 11,
+   "ibu": "5",
+   "description": "Hravý šibal mezi pivy. Spojuje sladkost malin a exotiku granátového jablka. Má krásnou barvu, výbornou chuť a je skvěle pitelný. Ovocem se nešetří: 10–15 % ovocného pyré a žádné sirupy.",
+   "url": "https://svabin.com/beers/puk/",
+   "markdown": "https://svabin.com/beers/puk.md",
+   "image": "https://svabin.com/assets/beer-puk.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 799,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 1149,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 139,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 199,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "pathfinder",
+   "name": "Pathfinder",
+   "style": "NEIPA 12°",
+   "abv_percent": 5,
+   "plato": 12,
+   "ibu": "15",
+   "description": "Šťavnatá New England IPA s americkými chmely Cryo Fresh a Mosaic. Nabízí výrazné chmelové aroma, nízkou hořkost a příjemně plné tělo.",
+   "url": "https://svabin.com/beers/pathfinder/",
+   "markdown": "https://svabin.com/beers/pathfinder.md",
+   "image": "https://svabin.com/assets/beer-pathfinder.webp",
+   "offers": [
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 1149,
+     "currency": "CZK",
+     "in_stock": false
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 199,
+     "currency": "CZK",
+     "in_stock": false
+    }
+   ]
+  },
+  {
+   "id": "minipuk",
+   "name": "Mini Puk",
+   "style": "Kyseláč 7°",
+   "abv_percent": 2.7,
+   "plato": 7,
+   "ibu": "5",
+   "description": "Spojuje svěží angrešt a šťavnaté višně. Díky nižšímu obsahu alkoholu je lehký, osvěžující a skvěle pitelný.",
+   "url": "https://svabin.com/beers/minipuk/",
+   "markdown": "https://svabin.com/beers/minipuk.md",
+   "image": "https://svabin.com/assets/beer-minipuk.webp",
+   "offers": [
+    {
+     "pack": "6 cans 0.5 l",
+     "price": 549,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 749,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 can 0.5 l",
+     "price": 95,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 129,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  },
+  {
+   "id": "pixie",
+   "name": "Pixie",
+   "style": "APA 11°",
+   "description": "Americká APA s pixí jiskrou. Svěží citrusové a tropické chmely, lehké zlaté tělo a pitelná, jemně ovocná hořkost. Pivo, které tě postaví na nohy a roztančí večer.",
+   "url": "https://svabin.com/beers/pixie/",
+   "markdown": "https://svabin.com/beers/pixie.md",
+   "image": "https://svabin.com/assets/beer-pixiebottle.webp",
+   "offers": [
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 1149,
+     "currency": "CZK",
+     "in_stock": true
+    },
+    {
+     "pack": "1 bottle 0.75 l",
+     "price": 199,
+     "currency": "CZK",
+     "in_stock": true
+    }
+   ]
+  }
+ ],
+ "mixes": [
+  {
+   "id": "mix-lezak-special",
+   "name": "Mix ležák + speciál",
+   "url": "https://svabin.com/mix/lezak-special/",
+   "markdown": "https://svabin.com/mix/lezak-special.md",
+   "offers": [
+    {
+     "pack": "12 cans 0.5 l",
+     "price": 1042,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 2,
+       "beer": "Stínovlk",
+       "style": "Polotmavý ležák 11°"
+      },
+      {
+       "qty": 2,
+       "beer": "Bard",
+       "style": "Světlý ležák 11°"
+      },
+      {
+       "qty": 2,
+       "beer": "Satyr",
+       "style": "Světlý ležák 12°"
+      },
+      {
+       "qty": 1,
+       "beer": "Faun",
+       "style": "Světlé výčepní 10°"
+      },
+      {
+       "qty": 2,
+       "beer": "Leshy",
+       "style": "TDH Double IPA 17°"
+      },
+      {
+       "qty": 1,
+       "beer": "Puk",
+       "style": "Sour Ale 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Kodama",
+       "style": "Session IPL 8°"
+      },
+      {
+       "qty": 1,
+       "beer": "Mini Puk",
+       "style": "Kyseláč 7°"
+      }
+     ]
+    },
+    {
+     "pack": "10 bottles 0.75 l",
+     "price": 1312,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 2,
+       "beer": "Stínovlk",
+       "style": "Polotmavý ležák 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Satyr",
+       "style": "Světlý ležák 12°"
+      },
+      {
+       "qty": 1,
+       "beer": "Bard",
+       "style": "Světlý ležák 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Faun",
+       "style": "Světlé výčepní 10°"
+      },
+      {
+       "qty": 2,
+       "beer": "Leshy",
+       "style": "TDH Double IPA 17°"
+      },
+      {
+       "qty": 1,
+       "beer": "Puk",
+       "style": "Sour Ale 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Pixie",
+       "style": "APA 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Mini Puk",
+       "style": "Kyseláč 7°"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mix-ochutnavka",
+   "name": "Ochutnávkový box",
+   "url": "https://svabin.com/mix/ochutnavka/",
+   "markdown": "https://svabin.com/mix/ochutnavka.md",
+   "offers": [
+    {
+     "pack": "7 cans 0.5 l",
+     "price": 689,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 1,
+       "beer": "Stínovlk",
+       "style": "Polotmavý ležák 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Bard",
+       "style": "Světlý ležák 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Satyr",
+       "style": "Světlý ležák 12°"
+      },
+      {
+       "qty": 1,
+       "beer": "Faun",
+       "style": "Světlé výčepní 10°"
+      },
+      {
+       "qty": 1,
+       "beer": "Leshy",
+       "style": "TDH Double IPA 17°"
+      },
+      {
+       "qty": 1,
+       "beer": "Kodama",
+       "style": "Session IPL 8°"
+      },
+      {
+       "qty": 1,
+       "beer": "Puk",
+       "style": "Sour Ale 11°"
+      }
+     ]
+    },
+    {
+     "pack": "6 bottles 0.75 l",
+     "price": 794,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 1,
+       "beer": "Stínovlk",
+       "style": "Polotmavý ležák 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Satyr",
+       "style": "Světlý ležák 12°"
+      },
+      {
+       "qty": 1,
+       "beer": "Bard",
+       "style": "Světlý ležák 11°"
+      },
+      {
+       "qty": 1,
+       "beer": "Faun",
+       "style": "Světlé výčepní 10°"
+      },
+      {
+       "qty": 1,
+       "beer": "Leshy",
+       "style": "TDH Double IPA 17°"
+      },
+      {
+       "qty": 1,
+       "beer": "Puk",
+       "style": "Sour Ale 11°"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mix-lezaky",
+   "name": "Mix ležáků",
+   "url": "https://svabin.com/mix/lezaky/",
+   "markdown": "https://svabin.com/mix/lezaky.md",
+   "offers": [
+    {
+     "pack": "12 cans 0.5 l",
+     "price": 852,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 3,
+       "beer": "Stínovlk",
+       "style": "Polotmavý ležák 11°"
+      },
+      {
+       "qty": 3,
+       "beer": "Bard",
+       "style": "Světlý ležák 11°"
+      },
+      {
+       "qty": 3,
+       "beer": "Satyr",
+       "style": "Světlý ležák 12°"
+      },
+      {
+       "qty": 3,
+       "beer": "Faun",
+       "style": "Světlé výčepní 10°"
+      }
+     ]
+    },
+    {
+     "pack": "10 bottles 0.75 l",
+     "price": 960,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 3,
+       "beer": "Stínovlk",
+       "style": "Polotmavý ležák 11°"
+      },
+      {
+       "qty": 3,
+       "beer": "Satyr",
+       "style": "Světlý ležák 12°"
+      },
+      {
+       "qty": 2,
+       "beer": "Bard",
+       "style": "Světlý ležák 11°"
+      },
+      {
+       "qty": 2,
+       "beer": "Faun",
+       "style": "Světlé výčepní 10°"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mix-specialy",
+   "name": "Mix speciálů",
+   "url": "https://svabin.com/mix/specialy/",
+   "markdown": "https://svabin.com/mix/specialy.md",
+   "offers": [
+    {
+     "pack": "12 cans 0.5 l",
+     "price": 1260,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 3,
+       "beer": "Leshy",
+       "style": "TDH Double IPA 17°"
+      },
+      {
+       "qty": 3,
+       "beer": "Puk",
+       "style": "Sour Ale 11°"
+      },
+      {
+       "qty": 3,
+       "beer": "Kodama",
+       "style": "Session IPL 8°"
+      },
+      {
+       "qty": 3,
+       "beer": "Mini Puk",
+       "style": "Kyseláč 7°"
+      }
+     ]
+    },
+    {
+     "pack": "10 bottles 0.75 l",
+     "price": 1664,
+     "currency": "CZK",
+     "in_stock": true,
+     "contents": [
+      {
+       "qty": 3,
+       "beer": "Leshy",
+       "style": "TDH Double IPA 17°"
+      },
+      {
+       "qty": 3,
+       "beer": "Puk",
+       "style": "Sour Ale 11°"
+      },
+      {
+       "qty": 2,
+       "beer": "Pixie",
+       "style": "APA 11°"
+      },
+      {
+       "qty": 2,
+       "beer": "Mini Puk",
+       "style": "Kyseláč 7°"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
