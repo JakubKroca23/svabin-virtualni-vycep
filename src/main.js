@@ -240,7 +240,12 @@ async function startApp() {
 
   renderHeader(document.getElementById('siteHeader'), {
     onNavigate: (view) => {
-      if (view === 'checkout') renderCheckoutView(document.getElementById('viewCheckout'), { cart, onBackToCart: () => toggleCartDrawer(true) });
+      if (view === 'checkout')
+        renderCheckoutView(document.getElementById('viewCheckout'), {
+          cart,
+          onBackToCart: () => toggleCartDrawer(true),
+          onBackToCatalog: () => switchMainView('catalog'),
+        });
       switchMainView(view);
     },
     onToggleSound: async () => {
@@ -262,14 +267,19 @@ async function startApp() {
   renderBeerSelectors();
   renderCatalog();
   renderStoryView(document.getElementById('viewStory'), { onBack: () => switchMainView('simulator') });
-  renderCheckoutView(document.getElementById('viewCheckout'), { cart, onBackToCart: () => toggleCartDrawer(true) });
+  const checkoutOpts = {
+    cart,
+    onBackToCart: () => toggleCartDrawer(true),
+    onBackToCatalog: () => switchMainView('catalog'),
+  };
+  renderCheckoutView(document.getElementById('viewCheckout'), checkoutOpts);
   renderCartDrawer(document.getElementById('drawerRoot'), {
     cart,
     shipping: catalog.shipping,
     onClose: () => toggleCartDrawer(false),
     onCheckout: () => {
       toggleCartDrawer(false);
-      renderCheckoutView(document.getElementById('viewCheckout'), { cart, onBackToCart: () => toggleCartDrawer(true) });
+      renderCheckoutView(document.getElementById('viewCheckout'), checkoutOpts);
       switchMainView('checkout');
     },
   });
@@ -281,7 +291,7 @@ async function startApp() {
   cart.subscribe((items) => {
     updateCartBadge(items.reduce((sum, item) => sum + item.qty, 0));
     updateCartDrawer(cart, catalog.shipping);
-    renderCheckoutView(document.getElementById('viewCheckout'), { cart, onBackToCart: () => toggleCartDrawer(true) });
+    renderCheckoutView(document.getElementById('viewCheckout'), checkoutOpts);
   });
   updateCartBadge(cart.getItems().reduce((sum, item) => sum + item.qty, 0));
   switchMainView('simulator');
