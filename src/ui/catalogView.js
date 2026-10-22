@@ -1,4 +1,4 @@
-import { escapeHtml, safeCssColor, safeSvabinUrl } from './dom.js';
+import { escapeHtml, safeCatalogImageUrl, safeSvabinUrl } from './dom.js';
 
 function categoryFor(beer) {
   const text = `${beer.name} ${beer.style} ${beer.subtitle}`.toLowerCase();
@@ -20,12 +20,26 @@ function formatCzk(value) {
   return Number.isFinite(amount) ? amount.toLocaleString('cs-CZ') : '0';
 }
 
+function imageOrPlaceholder(image, name) {
+  const imageUrl = safeCatalogImageUrl(image);
+  const safeName = escapeHtml(name || 'Pivo Švabín');
+  const fallback = `<div data-image-fallback class="${
+    imageUrl ? 'hidden ' : ''
+  }absolute inset-0 flex items-center justify-center p-4 text-center font-serif font-bold text-xl leading-tight">${safeName}</div>`;
+  return `
+    <div class="relative rounded-md mb-3.5 border border-svabin-borderlight bg-svabin-elevated h-44 overflow-hidden text-svabin-cream">
+      ${
+        imageUrl
+          ? `<img data-catalog-img src="${escapeHtml(imageUrl)}" alt="${safeName}" loading="lazy" decoding="async" class="w-full h-full object-contain p-3">`
+          : ''
+      }
+      ${fallback}
+    </div>
+  `;
+}
+
 function beerCard(beer) {
   const id = escapeHtml(beer.id);
-  const paperBg = safeCssColor(beer.paperBg, '#ece3d2');
-  const inkPrimary = safeCssColor(beer.inkPrimary, '#241e18');
-  const liquidTop = safeCssColor(beer.liquidTop, '#e8a828');
-  const liquidMid = safeCssColor(beer.liquidMid, '#c67810');
   const style = beer.style || 'Řemeslné pivo';
   const subtitle = beer.subtitle || beer.style;
   return `
@@ -37,17 +51,9 @@ function beerCard(beer) {
           </span>
           <span class="text-xs font-medium text-svabin-amber">${escapeHtml(beer.epm || '')}</span>
         </div>
-        <div class="rounded-md p-4 mb-3.5 border border-black/20 flex items-center justify-between gap-3" style="background:${paperBg}; color:${inkPrimary};">
-          <div>
-            <div class="text-[10px] uppercase tracking-widest opacity-75 font-semibold">Pivovar Švabín · 1567</div>
-            <h3 class="font-serif font-bold text-2xl leading-tight mt-0.5">${escapeHtml(beer.name)}</h3>
-            <p class="text-xs font-medium opacity-85">${escapeHtml(subtitle)}</p>
-            <div class="text-[11px] opacity-75 mt-2">${escapeHtml(beer.abv || '')} · ${escapeHtml(beer.ibu || '')}</div>
-          </div>
-          <div class="w-12 h-16 rounded-sm border border-black/20 flex flex-col items-center justify-center text-center shrink-0 shadow-inner" style="background:linear-gradient(180deg, ${liquidTop}, ${liquidMid}); color:#fff;">
-            <span class="font-serif font-bold text-xs">${escapeHtml(beer.epm || 'Š')}</span>
-          </div>
-        </div>
+        ${imageOrPlaceholder(beer.image, beer.name)}
+        <h3 class="font-serif font-bold text-2xl leading-tight mt-0.5 text-svabin-cream">${escapeHtml(beer.name)}</h3>
+        <p class="text-xs font-medium text-svabin-sand mt-0.5 mb-2">${escapeHtml(subtitle)}</p>
         <p class="text-xs font-medium text-svabin-cream mb-1">${escapeHtml(style)}</p>
         <p class="text-xs text-svabin-muted leading-relaxed">${escapeHtml(beer.description || '')}</p>
       </div>
@@ -70,20 +76,25 @@ function beerCard(beer) {
 
 function mixCard(mix) {
   const offer = (mix.offers || []).find((item) => item.in_stock) || (mix.offers || [])[0];
+  const inStock = Boolean((mix.offers || []).find((item) => item.in_stock));
   const url = safeSvabinUrl(mix.url);
+  const id = escapeHtml(mix.id);
   return `
     <article class="bg-svabin-bg border border-svabin-border rounded-lg p-5 flex flex-col gap-3">
       <div class="text-[11px] font-semibold text-svabin-amber">Namíchaný box</div>
       <h3 class="font-serif font-semibold text-xl text-svabin-cream">${escapeHtml(mix.name)}</h3>
       <p class="text-xs text-svabin-muted">${escapeHtml(offer?.pack || 'Výběr piv ze Švabína')} · ${formatCzk(offer?.price)} Kč</p>
-      <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="mt-auto py-2 px-3 rounded bg-svabin-elevated hover:bg-svabin-borderlight text-svabin-cream font-medium text-xs transition text-center">
-        Detail mixu na svabin.com
-      </a>
+      <div class="mt-auto grid grid-cols-2 gap-2">
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="py-2 px-3 rounded bg-svabin-elevated hover:bg-svabin-borderlight text-svabin-cream font-medium text-xs transition text-center">
+          Detail mixu na svabin.com
+        </a>
+        <button type="button" data-add-mix="${id}" ${inStock ? '' : 'disabled'} class="py-2 px-3 rounded bg-svabin-amber hover:bg-svabin-amberhover disabled:opacity-40 disabled:pointer-events-none text-svabin-bg font-semibold text-xs transition text-center">${inStock ? 'Do košíku' : 'Vyprodáno'}</button>
+      </div>
     </article>
   `;
 }
 
-export function renderCatalogView(root, { catalog, activeCategory = 'all', onFilter, onOpenBeer, onAddBeer } = {}) {
+export function renderCatalogView(root, { catalog, activeCategory = 'all', onFilter, onOpenBeer, onAddBeer, onAddMix } = {}) {
   const beers = catalog.beers || [];
   const filtered = activeCategory === 'all' ? beers : beers.filter((beer) => categoryFor(beer) === activeCategory);
   root.innerHTML = `
@@ -112,4 +123,15 @@ export function renderCatalogView(root, { catalog, activeCategory = 'all', onFil
   root.querySelectorAll('[data-cat]').forEach((button) => button.addEventListener('click', () => onFilter?.(button.dataset.cat)));
   root.querySelectorAll('[data-open-beer]').forEach((button) => button.addEventListener('click', () => onOpenBeer?.(button.dataset.openBeer)));
   root.querySelectorAll('[data-add-beer]').forEach((button) => button.addEventListener('click', () => onAddBeer?.(button.dataset.addBeer)));
+  root.querySelectorAll('[data-add-mix]').forEach((button) => button.addEventListener('click', () => onAddMix?.(button.dataset.addMix)));
+  root.querySelectorAll('[data-catalog-img]').forEach((img) => {
+    img.addEventListener(
+      'error',
+      () => {
+        img.classList.add('hidden');
+        img.nextElementSibling?.classList.remove('hidden');
+      },
+      { once: true },
+    );
+  });
 }

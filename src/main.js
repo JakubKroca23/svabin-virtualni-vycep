@@ -1,5 +1,5 @@
 import './style.css';
-import { loadCatalog } from './data/catalog.js';
+import { applySubscription, loadCatalog } from './data/catalog.js';
 import { createCart } from './cart/cart.js';
 import { createSfx } from './audio/sfx.js';
 import { createPourSimulator } from './sim/pourSimulator.js';
@@ -11,6 +11,7 @@ import { renderCheckoutView } from './ui/checkoutView.js';
 import { renderHeader, updateCartBadge, updateSoundToggle } from './ui/header.js';
 import { updateProductPanel, updatePurchaseMode } from './ui/productPanel.js';
 import { renderStoryView } from './ui/storyView.js';
+import { safeCatalogImageUrl } from './ui/dom.js';
 import { renderViews, showBanner, showToast, switchMainView } from './ui/views.js';
 
 const app = document.querySelector('#app');
@@ -38,6 +39,23 @@ function enhanceBeer(beer) {
 
 function findBeer(id) {
   return catalog.beers.find((beer) => beer.id === id);
+}
+
+function findMix(id) {
+  return catalog.mixes.find((mix) => mix.id === id);
+}
+
+function mixCartProduct(mix) {
+  const offer = (mix.offers || []).find((item) => item.in_stock);
+  if (!offer) return null;
+  const priceOnce = Number(offer.price) || 0;
+  return {
+    id: mix.id,
+    name: mix.name,
+    priceOnce,
+    priceSub: applySubscription(priceOnce),
+    image: safeCatalogImageUrl(mix.image) || null,
+  };
 }
 
 function renderSimulatorView(root) {
@@ -142,6 +160,17 @@ function addBeerToCart(id = selectedBeer.id) {
   showToast(`${beer.name} přidán do košíku`);
 }
 
+function addMixToCart(id) {
+  const mix = findMix(id);
+  const product = mix ? mixCartProduct(mix) : null;
+  if (!product) {
+    showToast('Tenhle mix teď není skladem.');
+    return;
+  }
+  cart.add(product, purchaseMode);
+  showToast(`${product.name} přidán do košíku`);
+}
+
 function renderCatalog() {
   renderCatalogView(document.getElementById('viewCatalog'), {
     catalog,
@@ -155,6 +184,7 @@ function renderCatalog() {
       switchMainView('simulator');
     },
     onAddBeer: (id) => addBeerToCart(id),
+    onAddMix: (id) => addMixToCart(id),
   });
 }
 

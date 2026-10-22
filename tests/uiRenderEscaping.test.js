@@ -50,6 +50,42 @@ describe('UI renderer escaping', () => {
     expect(root.innerHTML).toContain('data-open-beer="beer&quot; onclick=&quot;alert(1)"');
   });
 
+  it('renders safe official catalog images with a name fallback', () => {
+    const root = rootStub();
+    renderCatalogView(root, {
+      catalog: {
+        beers: [
+          {
+            ...maliciousBeer,
+            id: 'bard',
+            name: 'Bard',
+            image: 'https://svabin.com/assets/bard.png',
+          },
+        ],
+        mixes: [],
+      },
+    });
+
+    expect(root.innerHTML).toContain('src="https://svabin.com/assets/bard.png"');
+    expect(root.innerHTML).toContain('alt="Bard"');
+    expect(root.innerHTML).toContain('data-image-fallback');
+    expect(root.innerHTML).not.toContain('src="javascript:');
+  });
+
+  it('renders a mix add-to-cart button while keeping the detail link', () => {
+    const root = rootStub();
+    renderCatalogView(root, {
+      catalog: {
+        beers: [],
+        mixes: [{ id: 'mix-6', name: 'Mix 6', url: 'https://svabin.com/mix-6', offers: [{ pack: '6 cans', price: 499, in_stock: true }] }],
+      },
+    });
+
+    expect(root.innerHTML).toContain('data-add-mix="mix-6"');
+    expect(root.innerHTML).toContain('Do košíku');
+    expect(root.innerHTML).toContain('Detail mixu na svabin.com');
+  });
+
   it('escapes beer strip text and attributes', () => {
     const root = rootStub();
     renderBeerStrip(root, { beers: [maliciousBeer], selectedId: maliciousBeer.id });

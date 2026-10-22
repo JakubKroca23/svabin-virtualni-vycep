@@ -37,6 +37,20 @@ describe('createCart', () => {
     expect(cart.getItems()[0].price).toBe(449);
   });
 
+  it('adds mix-shaped products using the same line shape as beer items', () => {
+    const cart = createCart(createMockStorage());
+    cart.add({ id: 'mix-6', name: 'Mix 6', priceOnce: 499, priceSub: 424 }, 'sub');
+
+    expect(cart.getItems()[0]).toMatchObject({
+      key: 'mix-6:sub',
+      beerId: 'mix-6',
+      name: 'Mix 6',
+      mode: 'sub',
+      price: 424,
+      qty: 1,
+    });
+  });
+
   it('increments qty when adding same key', () => {
     const cart = createCart(createMockStorage());
     cart.add(beer, 'sub');
