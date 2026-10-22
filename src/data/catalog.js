@@ -1,4 +1,6 @@
 // src/data/catalog.js
+import { getPourProfile } from './pourProfiles.js';
+
 const LIVE_URL = 'https://svabin.com/catalog.json';
 const FALLBACK_URL = `${import.meta.env.BASE_URL}data/catalog.fallback.json`;
 
@@ -13,6 +15,10 @@ export function pickPackPrice(offers = []) {
 
 export function applySubscription(priceOnce) {
   return Math.round(priceOnce * 0.85);
+}
+
+export function attachPourProfiles(beers) {
+  return beers.map((b) => ({ ...b, ...getPourProfile(b.id, b.style) }));
 }
 
 export async function loadCatalog() {
@@ -51,7 +57,7 @@ function shapeCatalog(data) {
     };
   });
   return {
-    beers,
+    beers: attachPourProfiles(beers),
     mixes: data.mixes || [],
     seller: data.seller || {},
     shipping: data.shipping || {},
