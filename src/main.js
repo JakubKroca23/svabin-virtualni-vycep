@@ -14,7 +14,6 @@ let sim = null;
 let selectedBeer = null;
 let vesselType = 'can';
 let glassType = 'mug';
-let glassTilted = true;
 let soundOn = false;
 
 function enhanceBeer(beer) {
@@ -39,7 +38,12 @@ function updateHud(hud) {
   set('hudLiquidMl', hud.liquidMl);
   set('hudFoamPct', hud.foamPct);
   set('hudPourStyle', hud.pourStyle);
-  set('stepTitle', hud.raw?.isOpened ? 'Nalévej náklonem · nebo zvol styl čepování' : 'Klikni na nádobu a otevři ji');
+  set(
+    'stepTitle',
+    hud.raw?.isOpened
+      ? 'Táhni nádobu dolů · sklo = doušek · nebo styl čepování'
+      : 'Klikni na nádobu a otevři ji',
+  );
   set('sipCounterText', `Doušky: ${hud.sipsTaken ?? 0}`);
   set('beerTitle', selectedBeer?.name || 'Švabín');
   set('beerMeta', selectedBeer ? `${selectedBeer.subtitle || selectedBeer.style || ''} · ${selectedBeer.abv || ''}`.replace(/\s·\s$/, '') : '');
@@ -47,8 +51,13 @@ function updateHud(hud) {
   if (sip) sip.disabled = !hud.canSip;
   const indicator = document.getElementById('statusIndicator');
   if (indicator) {
-    indicator.className = `w-2 h-2 rounded-full ${hud.raw?.flowRate > 0.05 ? 'bg-svabin-greentext animate-pulse' : 'bg-svabin-amber'}`;
+    indicator.className = `w-2 h-2 rounded-full ${hud.raw?.flowRate > 4 ? 'bg-svabin-greentext animate-pulse' : 'bg-svabin-amber'}`;
   }
+  const angle = Math.round(hud.raw?.vesselAngle ?? 0);
+  const slider = document.getElementById('pourAngleSlider');
+  const label = document.getElementById('pourAngleVal');
+  if (label) label.textContent = `${angle}°`;
+  if (slider && document.activeElement !== slider) slider.value = String(angle);
 }
 
 function renderBeerSelectors() {
@@ -105,11 +114,6 @@ function bindControls() {
   document.getElementById('glassMugBtn').addEventListener('click', () => setGlass('mug'));
   document.getElementById('glassTekuBtn').addEventListener('click', () => setGlass('teku'));
   document.getElementById('glassPintBtn').addEventListener('click', () => setGlass('pint'));
-  document.getElementById('glassTiltBtn').addEventListener('click', () => {
-    glassTilted = !glassTilted;
-    sim?.toggleGlassTilt();
-    document.getElementById('glassTiltBtn').textContent = glassTilted ? 'Nakloněná' : 'Postavená';
-  });
   document.getElementById('pourAngleSlider').addEventListener('input', (event) => {
     const value = event.target.value;
     document.getElementById('pourAngleVal').textContent = `${value}°`;
@@ -173,8 +177,7 @@ function renderShell() {
                 <button id="glassTekuBtn" type="button" class="py-1.5 px-2 rounded font-medium text-svabin-muted hover:text-svabin-cream">Teku</button>
                 <button id="glassPintBtn" type="button" class="py-1.5 px-2 rounded font-medium text-svabin-muted hover:text-svabin-cream">Štucl</button>
               </div>
-              <button id="glassTiltBtn" type="button" class="px-3 py-1.5 rounded bg-svabin-elevated border border-svabin-borderlight text-svabin-cream font-medium">Nakloněná</button>
-              <div class="min-w-[140px]"><div class="flex justify-between mb-1 text-svabin-muted"><span>Náklon</span><span id="pourAngleVal" class="text-svabin-cream font-semibold">0°</span></div><input id="pourAngleSlider" type="range" min="0" max="135" value="0" class="w-full"></div>
+              <div class="min-w-[160px]"><div class="flex justify-between mb-1 text-svabin-muted"><span>Náklon nádoby</span><span id="pourAngleVal" class="text-svabin-cream font-semibold">0°</span></div><input id="pourAngleSlider" type="range" min="0" max="145" value="0" class="w-full"></div>
             </div>
           </div>
         </div>

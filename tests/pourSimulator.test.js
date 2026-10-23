@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPourSimulator } from '../src/sim/pourSimulator.js';
-import { createInitialState, getGlassProfile, stepPhysics } from '../src/sim/pourPhysics.js';
+import {
+  applySip,
+  computeOutflowMlPerSec,
+  createInitialState,
+  getGlassProfile,
+  pourThresholdDeg,
+  stepPhysics,
+} from '../src/sim/pourPhysics.js';
 
 function createMockCanvas() {
   const listeners = new Map();
@@ -44,9 +51,49 @@ describe('pourPhysics', () => {
     state.isOpened = true;
     state.targetVesselAngle = 110;
     state.vesselAngle = 110;
-    for (let i = 0; i < 40; i += 1) stepPhysics(state);
+    for (let i = 0; i < 90; i += 1) stepPhysics(state, 1 / 60);
     expect(state.liquidMl + state.foamMl).toBeGreaterThan(40);
     expect(state.vesselRemainingMl).toBeLessThan(500);
+  });
+
+  it('does not pour below tip threshold and keeps glass upright', () => {
+    const state = createInitialState();
+    state.isOpened = true;
+    state.targetVesselAngle = 30;
+    state.vesselAngle = 30;
+    expect(pourThresholdDeg(state)).toBeGreaterThan(40);
+    expect(computeOutflowMlPerSec(state, beer)).toBe(0);
+    for (let i = 0; i < 20; i += 1) stepPhysics(state, 1 / 60);
+    expect(state.liquidMl + state.foamMl).toBe(0);
+    expect(state.glassTiltAngle).toBe(0);
+  });
+
+  it('fuller vessels pour at a lower tip angle', () => {
+    const full = createInitialState();
+    full.vesselRemainingMl = 500;
+    const emptyish = createInitialState();
+    emptyish.vesselRemainingMl = 80;
+    expect(pourThresholdDeg(full)).toBeLessThan(pourThresholdDeg(emptyish));
+  });
+
+  it('lags the stream and can spill when glass is full', () => {
+    const state = createInitialState();
+    state.isOpened = true;
+    state.targetVesselAngle = 130;
+    state.vesselAngle = 130;
+    state.liquidMl = 480;
+    state.foamMl = 30;
+    for (let i = 0; i < 45; i += 1) stepPhysics(state, 1 / 60);
+    expect(state.spillMl).toBeGreaterThan(0);
+  });
+
+  it('sips reduce glass contents', () => {
+    const state = createInitialState();
+    state.liquidMl = 200;
+    state.foamMl = 40;
+    expect(applySip(state, 80)).toBe(true);
+    expect(state.liquidMl + state.foamMl).toBeLessThan(240);
+    expect(state.sipsTaken).toBe(1);
   });
 });
 
@@ -116,13 +163,13 @@ describe('createPourSimulator', () => {
     sim.triggerOpen();
     expect(sfx.play).toHaveBeenCalledWith('bottle-open');
 
-    sim.setTilt(125);
-    for (let i = 0; i < 40; i += 1) rafCallbacks.shift()?.(16 * i);
+    sim.setTilt(130);
+    for (let i = 0; i < 90; i += 1) rafCallbacks.shift()?.(16 * (i + 1));
     expect(sfx.startLoop).toHaveBeenCalledWith('pour-loop');
     expect(onHud).toHaveBeenLastCalledWith(expect.objectContaining({ canSip: true }));
 
     sim.setTilt(0);
-    for (let i = 0; i < 25; i += 1) rafCallbacks.shift()?.(300 + 16 * i);
+    for (let i = 0; i < 80; i += 1) rafCallbacks.shift()?.(2000 + 16 * i);
     expect(sfx.stopLoop).toHaveBeenCalledWith('pour-loop');
 
     sim.destroy();
@@ -139,7 +186,7 @@ describe('createPourSimulator', () => {
     sim.selectBeer(beer);
 
     sim.startMasterPour('mliko');
-    for (let i = 0; i < 50; i += 1) rafCallbacks.shift()?.(16 * i);
+    for (let i = 0; i < 120; i += 1) rafCallbacks.shift()?.(16 * (i + 1));
     expect(sfx.play).toHaveBeenCalledWith('can-open');
 
     sim.takeSip();
