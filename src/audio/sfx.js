@@ -1,3 +1,9 @@
+/** Short Mixkit-style SFX keys: can-open, bottle-open, pour-loop, foam, sip, burp */
+const GAIN_BY_NAME = {
+  burp: 1.55,
+  sip: 1,
+};
+
 export function createSfx(baseUrl = `${import.meta.env.BASE_URL}sounds/`) {
   let enabled = false;
   let ctx = null;
@@ -34,7 +40,10 @@ export function createSfx(baseUrl = `${import.meta.env.BASE_URL}sounds/`) {
       const buf = await load(name);
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      src.connect(ctx.destination);
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = GAIN_BY_NAME[name] ?? 1;
+      src.connect(gainNode);
+      gainNode.connect(ctx.destination);
       src.start();
     },
     async startLoop(name) {
