@@ -114,8 +114,8 @@ function createInitialState() {
     openProgress: 0,
     vesselAngle: 0,
     targetVesselAngle: 0,
-    glassTiltAngle: -28,
-    targetGlassTiltAngle: -28,
+    glassTiltAngle: 28,
+    targetGlassTiltAngle: 28,
     isGlassTiltedMode: true,
     vesselRemainingMl: 500,
     liquidMl: 0,
@@ -292,7 +292,7 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
     if (state.autoPourMode === 'hladinka') {
       if (fillRatio < 0.72) {
-        state.targetGlassTiltAngle = -28;
+        state.targetGlassTiltAngle = 28;
         state.targetVesselAngle = 86;
       } else if (fillRatio < 0.96 && state.vesselRemainingMl > 10) {
         state.targetGlassTiltAngle = 0;
@@ -305,7 +305,7 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
       }
     } else if (state.autoPourMode === 'snyt') {
       if (fillRatio < 0.42) {
-        state.targetGlassTiltAngle = -20;
+        state.targetGlassTiltAngle = 20;
         state.targetVesselAngle = 92;
       } else if (fillRatio < 0.68) {
         state.targetGlassTiltAngle = 0;
@@ -339,9 +339,9 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     if (!state.autoPourMode) {
       if (fillRatio > 0.78 && state.isGlassTiltedMode) {
         const straightenFactor = Math.min(1, (fillRatio - 0.78) / 0.18);
-        state.targetGlassTiltAngle = -28 * (1 - straightenFactor);
+        state.targetGlassTiltAngle = 28 * (1 - straightenFactor);
       } else if (state.isGlassTiltedMode) {
-        state.targetGlassTiltAngle = -28;
+        state.targetGlassTiltAngle = 28;
       }
     }
 
@@ -716,15 +716,15 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     ctx.fill();
     ctx.restore();
 
-    // Mug handle with depth (behind / in front suggestion)
+    // Mug handle on the left
     if (state.glassType === 'mug') {
       ctx.save();
       ctx.strokeStyle = 'rgba(220, 220, 220, 0.22)';
       ctx.lineWidth = 14 * scale;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(glassHalfW * 0.9, -glassH * 0.74);
-      ctx.bezierCurveTo(glassHalfW * 1.58, -glassH * 0.76, glassHalfW * 1.58, -glassH * 0.28, glassHalfW * 0.88, -glassH * 0.3);
+      ctx.moveTo(-glassHalfW * 0.9, -glassH * 0.74);
+      ctx.bezierCurveTo(-glassHalfW * 1.58, -glassH * 0.76, -glassHalfW * 1.58, -glassH * 0.28, -glassHalfW * 0.88, -glassH * 0.3);
       ctx.stroke();
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
       ctx.lineWidth = 3.5 * scale;
@@ -732,8 +732,8 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
       ctx.lineWidth = 2 * scale;
       ctx.beginPath();
-      ctx.moveTo(glassHalfW * 0.92, -glassH * 0.72);
-      ctx.bezierCurveTo(glassHalfW * 1.48, -glassH * 0.72, glassHalfW * 1.48, -glassH * 0.32, glassHalfW * 0.9, -glassH * 0.32);
+      ctx.moveTo(-glassHalfW * 0.92, -glassH * 0.72);
+      ctx.bezierCurveTo(-glassHalfW * 1.48, -glassH * 0.72, -glassHalfW * 1.48, -glassH * 0.32, -glassHalfW * 0.9, -glassH * 0.32);
       ctx.stroke();
       ctx.restore();
     }
@@ -1135,8 +1135,8 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     state.vesselAngle = 0;
     state.targetVesselAngle = 0;
     state.isGlassTiltedMode = true;
-    state.glassTiltAngle = -28;
-    state.targetGlassTiltAngle = -28;
+    state.glassTiltAngle = 28;
+    state.targetGlassTiltAngle = 28;
     state.vesselRemainingMl = 500;
     state.liquidMl = 0;
     state.foamMl = 0;
@@ -1175,7 +1175,7 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
   function toggleGlassTilt() {
     state.isGlassTiltedMode = !state.isGlassTiltedMode;
-    state.targetGlassTiltAngle = state.isGlassTiltedMode ? -28 : 0;
+    state.targetGlassTiltAngle = state.isGlassTiltedMode ? 28 : 0;
     emitHud();
   }
 
