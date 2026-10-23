@@ -168,6 +168,12 @@ describe('createPourSimulator', () => {
     sim.takeSip();
     expect(sfx.play).toHaveBeenCalledWith('sip');
 
+    for (let i = 0; i < 12; i += 1) {
+      sim.takeSip();
+      for (let f = 0; f < 3; f += 1) rafCallbacks.shift()?.(500 + 16 * f);
+    }
+    expect(sfx.play).toHaveBeenCalledWith('burp');
+
     sim.reset();
     expect(sfx.stopLoop).toHaveBeenCalledWith('pour-loop');
 

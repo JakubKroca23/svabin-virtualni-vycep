@@ -9,6 +9,7 @@ import {
   initFoamCells,
   resetPourState,
 } from './state.js';
+import { markBurpPlayed, shouldPlayBurpAfterSip } from './sipEffects.js';
 import { callSafely, clamp, randomBetween } from './util.js';
 
 export function createPourSimulator({ canvas, sfx, onHud } = {}) {
@@ -173,6 +174,11 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     }
     for (let i = 0; i < state.waveCount; i += 1) {
       state.waveVelocities[i] += Math.sin(i * 0.6) * 2.2;
+    }
+    const totalAfter = state.liquidMl + state.foamMl;
+    if (shouldPlayBurpAfterSip(state, totalAfter)) {
+      markBurpPlayed(state);
+      callSafely(sfx?.play, 'burp');
     }
     emitHud();
   }

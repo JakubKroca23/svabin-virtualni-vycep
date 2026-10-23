@@ -59,6 +59,7 @@ export function createInitialState() {
     foamFinished: false,
     renderLod: 'high',
     fpsSamples: [],
+    lastBurpAt: 0,
   };
 }
 
@@ -110,6 +111,7 @@ export function resetPourState(state) {
   state.foamFinished = false;
   state.isDraggingVessel = false;
   state.isDraggingGlass = false;
+  state.lastBurpAt = 0;
   initCondensation(state);
   initFoamCells(state);
 }

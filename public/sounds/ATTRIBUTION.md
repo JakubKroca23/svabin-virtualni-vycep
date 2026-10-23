@@ -9,5 +9,6 @@ All files in this directory are short preview MP3s from [Mixkit](https://mixkit.
 | `pour-loop.mp3` | Pouring water in a glass | 2826 | https://mixkit.co/free-sound-effects/pouring-water-in-a-glass/ |
 | `foam.mp3` | Pouring foamy soda | 3181 | https://mixkit.co/free-sound-effects/pouring-foamy-soda/ |
 | `sip.mp3` | Sip of water | 1307 | https://mixkit.co/free-sound-effects/sip-of-water/ |
+| `burp.mp3` | Cartoon strong fart (pitch/tempo/bass processed for říhnutí) | 3050 | https://mixkit.co/free-sound-effects/cartoon-strong-fart/ |
 
-Downloaded 2026-10-22 via `assets.mixkit.co` preview URLs (User-Agent required).
+Downloaded 2026-10-22 via `assets.mixkit.co` preview URLs (User-Agent required). `burp.mp3` added 2026-10-23 from the same Mixkit license; edited locally for a louder, playful burp after dopití.
