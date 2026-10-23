@@ -487,16 +487,17 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     if (barBg) {
       ctx.save();
       drawCoverImageFull(ctx, barBg, 0, 0, W, tableY + 20);
-      // Darken + warm grade so glass/vessel stay readable
+      // Strong darken so bar photo stays moody behind the pour
       const grade = ctx.createLinearGradient(0, 0, 0, tableY);
-      grade.addColorStop(0, 'rgba(8, 5, 3, 0.55)');
-      grade.addColorStop(0.45, 'rgba(12, 8, 5, 0.42)');
-      grade.addColorStop(1, 'rgba(6, 4, 2, 0.72)');
+      grade.addColorStop(0, 'rgba(4, 2, 1, 0.78)');
+      grade.addColorStop(0.4, 'rgba(6, 4, 2, 0.7)');
+      grade.addColorStop(1, 'rgba(3, 2, 1, 0.86)');
       ctx.fillStyle = grade;
       ctx.fillRect(0, 0, W, tableY + 20);
-      const spotlight = ctx.createRadialGradient(W * 0.4, H * 0.35, 30, W * 0.4, H * 0.4, Math.max(W, H) * 0.55);
-      spotlight.addColorStop(0, 'rgba(255, 200, 120, 0.08)');
-      spotlight.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+      const spotlight = ctx.createRadialGradient(W * 0.38, H * 0.42, 20, W * 0.4, H * 0.45, Math.max(W, H) * 0.5);
+      spotlight.addColorStop(0, 'rgba(255, 190, 110, 0.05)');
+      spotlight.addColorStop(0.55, 'rgba(0, 0, 0, 0.25)');
+      spotlight.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
       ctx.fillStyle = spotlight;
       ctx.fillRect(0, 0, W, tableY + 20);
       ctx.restore();
@@ -531,11 +532,12 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     ctx.fillStyle = 'rgba(255, 220, 170, 0.12)';
     ctx.fillRect(0, tableY, W, 1.5);
 
-    const scale = Math.min(1.12, Math.max(0.72, Math.min(W / 540, H / 540)));
-    const glassCenterX = W * 0.39;
+    const scale = Math.min(1.05, Math.max(0.68, Math.min(W / 560, H / 560)));
+    // Glass left, vessel upper-right — clear gap so tilted rim never hits the can
+    const glassCenterX = W * 0.32;
     const glassBottomY = tableY - 8 * scale;
-    const glassH = 248 * scale;
-    const glassHalfW = 67 * scale;
+    const glassH = 220 * scale;
+    const glassHalfW = 58 * scale;
     const glassTiltRad = (state.glassTiltAngle * Math.PI) / 180;
 
     const shadowGrad = ctx.createRadialGradient(glassCenterX, glassBottomY + 4 * scale, 4, glassCenterX, glassBottomY + 4 * scale, glassHalfW * 1.55);
@@ -547,11 +549,11 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     ctx.ellipse(glassCenterX, glassBottomY + 4 * scale, glassHalfW * 1.45, 14 * scale, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const vesselPivotX = glassCenterX + 132 * scale;
-    const vesselPivotY = glassBottomY - glassH - 48 * scale;
+    const canW = (state.vesselType === 'can' ? 72 : 64) * scale;
+    const canH = (state.vesselType === 'can' ? 138 : 185) * scale;
+    const vesselPivotX = glassCenterX + 195 * scale;
+    const vesselPivotY = glassBottomY - glassH - 95 * scale;
     const vesselTiltRad = (-state.vesselAngle * Math.PI) / 180;
-    const canW = (state.vesselType === 'can' ? 78 : 70) * scale;
-    const canH = (state.vesselType === 'can' ? 150 : 200) * scale;
     const localSpoutX = -canW * 0.28;
     const localSpoutY = -canH * 0.5;
     const spoutWorldX = vesselPivotX + (localSpoutX * Math.cos(vesselTiltRad) - localSpoutY * Math.sin(vesselTiltRad));
