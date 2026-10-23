@@ -1,4 +1,4 @@
-/** Playful burp after dopití — not subtle; cooldown prevents spam. */
+/** Realistic říhnutí after dopití; cooldown prevents spam. */
 export const BURP_EMPTY_THRESHOLD_ML = 14;
 export const BURP_COOLDOWN_MS = 4000;
 
