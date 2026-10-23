@@ -87,11 +87,49 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
   let lastFrameTime = null;
   let sipHold = 0;
 
-  const GLASS_H = 0.26;
-  const GLASS_HALF_W = 0.07;
-  const VESSEL_POS = new THREE.Vector3(0.22, 0.22, 0.02);
+  // Compact scene so glass + vessel fit on phone and desktop
+  const GLASS_H = 0.2;
+  const GLASS_HALF_W = 0.052;
+  const CAN_H = 0.12;
+  const CAN_R = 0.028;
+  /** Upright vessel center (held beside glass, fully in frame) */
+  const VESSEL_UPRIGHT = new THREE.Vector3(0.125, 0.105, 0.015);
   let pmrem = null;
   let envRT = null;
+
+  /** Local spout (lip) relative to vessel group origin (mesh centers). */
+  function spoutLocal() {
+    if (state.vesselType === 'can') {
+      return new THREE.Vector3(-CAN_R * 0.55, CAN_H * 0.5 - 0.002, 0);
+    }
+    // Bottle lip (matches lathe top)
+    return new THREE.Vector3(-0.009, 0.116, 0);
+  }
+
+  /**
+   * Place vessel so its lip tracks over the glass mouth when tipped.
+   * Rotation +Z tips the top toward -X (into the glass).
+   */
+  function placeVessel(angleDeg) {
+    const rad = THREE.MathUtils.degToRad(clamp(angleDeg, 0, 145));
+    const tip = clamp(angleDeg / 70, 0, 1); // engage lip-tracking early once pouring
+    vesselGroup.rotation.set(0, 0, rad);
+
+    const local = spoutLocal();
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    // Rotated spout offset from vessel origin
+    const rx = local.x * cos - local.y * sin;
+    const ry = local.x * sin + local.y * cos;
+
+    // Target world lip: just inside the rim, above liquid
+    const lipX = GLASS_HALF_W * 0.25;
+    const lipY = GLASS_H * 0.98;
+    const pourOrigin = new THREE.Vector3(lipX - rx, lipY - ry, VESSEL_UPRIGHT.z);
+
+    vesselGroup.position.lerpVectors(VESSEL_UPRIGHT, pourOrigin, tip);
+    vesselGroup.updateMatrixWorld(true);
+  }
 
   function emitHud() {
     callSafely(onHud, buildHud(state));
@@ -223,10 +261,8 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     const beer = state.selectedBeer || DEFAULT_BEER;
     const labelTex = loadLabelTexture(beer.image);
 
-    // Aluminum can
-    const canH = 0.145;
-    const canR = 0.033;
-    const canGeo = new THREE.CylinderGeometry(canR, canR, canH, 64, 1, false);
+    // Aluminum can (centered on vessel origin)
+    const canGeo = new THREE.CylinderGeometry(CAN_R, CAN_R, CAN_H, 64, 1, false);
     if (labelTex) {
       labelTex.wrapS = THREE.RepeatWrapping;
       labelTex.repeat.set(1, 1);
@@ -243,24 +279,30 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     });
     canMesh = new THREE.Mesh(canGeo, canMat);
     canMesh.castShadow = true;
-    // Lid
     const lid = new THREE.Mesh(
-      new THREE.CylinderGeometry(canR * 0.98, canR * 0.98, 0.004, 48),
+      new THREE.CylinderGeometry(CAN_R * 0.98, CAN_R * 0.98, 0.003, 48),
       new THREE.MeshStandardMaterial({ color: 0xd8d5d0, metalness: 0.9, roughness: 0.2 }),
     );
-    lid.position.y = canH / 2 + 0.002;
+    lid.position.y = CAN_H / 2 + 0.0015;
     canMesh.add(lid);
+    // Opening tab hint on pour side
+    const tab = new THREE.Mesh(
+      new THREE.BoxGeometry(0.012, 0.0015, 0.008),
+      new THREE.MeshStandardMaterial({ color: 0xc8c5c0, metalness: 0.95, roughness: 0.18 }),
+    );
+    tab.position.set(-CAN_R * 0.35, CAN_H / 2 + 0.003, 0);
+    canMesh.add(tab);
     vesselGroup.add(canMesh);
 
-    // Bottle lathe
+    // Bottle — origin near mid-body so tip rotation feels natural
     const bottlePts = [
-      new THREE.Vector2(0.012, 0),
-      new THREE.Vector2(0.034, 0.02),
-      new THREE.Vector2(0.036, 0.09),
-      new THREE.Vector2(0.03, 0.12),
-      new THREE.Vector2(0.014, 0.16),
-      new THREE.Vector2(0.012, 0.2),
-      new THREE.Vector2(0.011, 0.215),
+      new THREE.Vector2(0.01, -0.09),
+      new THREE.Vector2(0.028, -0.07),
+      new THREE.Vector2(0.03, 0.0),
+      new THREE.Vector2(0.026, 0.035),
+      new THREE.Vector2(0.012, 0.075),
+      new THREE.Vector2(0.01, 0.105),
+      new THREE.Vector2(0.009, 0.118),
     ];
     const bottleGeo = new THREE.LatheGeometry(bottlePts, 48);
     const bottleMat = new THREE.MeshPhysicalMaterial({
@@ -274,7 +316,6 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     });
     bottleMesh = new THREE.Mesh(bottleGeo, bottleMat);
     bottleMesh.castShadow = true;
-    bottleMesh.position.y = -0.01;
     vesselGroup.add(bottleMesh);
 
     canMesh.visible = state.vesselType === 'can';
@@ -298,16 +339,17 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x090705, 0.35);
+    scene.fog = new THREE.FogExp2(0x090705, 0.12);
 
     // Image-based lighting for glass reflections
     pmrem = new THREE.PMREMGenerator(renderer);
     envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
     scene.environment = envRT.texture;
 
-    camera = new THREE.PerspectiveCamera(32, 1, 0.01, 30);
-    camera.position.set(0.08, 0.2, 0.55);
-    camera.lookAt(0.08, 0.11, 0);
+    // Wider FOV + pulled back so can + glass stay in frame on mobile
+    camera = new THREE.PerspectiveCamera(42, 1, 0.01, 30);
+    camera.position.set(0.04, 0.16, 0.62);
+    camera.lookAt(0.04, 0.1, 0);
 
     const amb = new THREE.AmbientLight(0xffe6cc, 0.25);
     scene.add(amb);
@@ -338,19 +380,19 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
       new THREE.PlaneGeometry(3.2, 2.0),
       new THREE.MeshStandardMaterial({ map: bgTex, roughness: 0.9, metalness: 0, emissive: 0x22180f, emissiveIntensity: 0.15 }),
     );
-    bgMesh.position.set(0.1, 0.42, -0.95);
+    bgMesh.position.set(0.05, 0.35, -1.05);
     scene.add(bgMesh);
 
     const veil = new THREE.Mesh(
       new THREE.PlaneGeometry(3.3, 2.1),
-      new THREE.MeshBasicMaterial({ color: 0x050302, transparent: true, opacity: 0.28 }),
+      new THREE.MeshBasicMaterial({ color: 0x050302, transparent: true, opacity: 0.22 }),
     );
-    veil.position.set(0.1, 0.42, -0.94);
+    veil.position.set(0.05, 0.35, -1.04);
     scene.add(veil);
 
     // Thick wooden bar top
     tableMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.6, 0.07, 0.7),
+      new THREE.BoxGeometry(1.4, 0.06, 0.65),
       new THREE.MeshStandardMaterial({
         color: 0x4a2e1c,
         roughness: 0.42,
@@ -358,7 +400,7 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
         envMapIntensity: 0.35,
       }),
     );
-    tableMesh.position.set(0.1, -0.035, 0.08);
+    tableMesh.position.set(0.05, -0.03, 0.06);
     tableMesh.receiveShadow = true;
     tableMesh.castShadow = true;
     scene.add(tableMesh);
@@ -392,10 +434,10 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     rebuildGlassMeshes();
 
     vesselGroup = new THREE.Group();
-    vesselGroup.position.copy(VESSEL_POS);
     vesselGroup.name = 'vessel';
     scene.add(vesselGroup);
     rebuildVesselMeshes();
+    placeVessel(0);
 
     raycaster = new THREE.Raycaster();
 
@@ -446,31 +488,39 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
 
     const beer = state.selectedBeer || DEFAULT_BEER;
     const fill = Math.min(1, (state.liquidMl + state.foamMl * 0.7) / state.maxGlassMl);
-    const liquidTopY = Math.max(0.015, fill * GLASS_H * 0.96);
+    // Aim into the glass mouth (inner wall toward vessel), never outside the rim
+    const liquidTopY = Math.max(0.02, Math.min(GLASS_H * 0.92, fill * GLASS_H * 0.96 + 0.01));
+    const aimX = Math.min(GLASS_HALF_W * 0.35, 0.018);
 
-    const spoutLocal = new THREE.Vector3(
-      state.vesselType === 'can' ? -0.028 : -0.012,
-      state.vesselType === 'can' ? 0.078 : 0.205,
-      0,
-    );
-    const spoutWorld = spoutLocal.clone();
+    vesselGroup.updateMatrixWorld(true);
+    glassGroup.updateMatrixWorld(true);
+
+    const spoutWorld = spoutLocal();
     vesselGroup.localToWorld(spoutWorld);
 
-    const impactLocal = new THREE.Vector3(0.0, liquidTopY, 0);
-    const impactWorld = impactLocal.clone();
+    const impactWorld = new THREE.Vector3(aimX, liquidTopY, 0);
     glassGroup.localToWorld(impactWorld);
 
-    // Ballistic midpoints (gravity-ish arc)
-    const t1 = spoutWorld.clone().lerp(impactWorld, 0.33);
-    t1.y -= 0.025 + state.flowRate * 0.00012;
-    const t2 = spoutWorld.clone().lerp(impactWorld, 0.66);
-    t2.y -= 0.018 + state.flowRate * 0.00008;
-    t1.x += Math.sin(performance.now() * 0.018) * 0.003;
-    t2.x += Math.sin(performance.now() * 0.022 + 1.2) * 0.002;
+    // If lip somehow ends past the glass, still pull impact inside rim
+    const glassOrigin = new THREE.Vector3();
+    glassGroup.getWorldPosition(glassOrigin);
+    const rim = GLASS_HALF_W * 0.85;
+    impactWorld.x = clamp(impactWorld.x, glassOrigin.x - rim, glassOrigin.x + rim);
+    impactWorld.z = clamp(impactWorld.z, glassOrigin.z - rim * 0.4, glassOrigin.z + rim * 0.4);
+
+    const drop = Math.max(0.008, spoutWorld.y - impactWorld.y);
+    const t1 = spoutWorld.clone().lerp(impactWorld, 0.28);
+    t1.y = spoutWorld.y - drop * 0.22;
+    const t2 = spoutWorld.clone().lerp(impactWorld, 0.62);
+    t2.y = spoutWorld.y - drop * 0.72;
+    // Tiny wobble only on Z so X stays aimed into glass
+    const wobble = Math.sin(performance.now() * 0.02) * 0.0015;
+    t1.z += wobble;
+    t2.z -= wobble * 0.6;
 
     const curve = new THREE.CatmullRomCurve3([spoutWorld, t1, t2, impactWorld]);
-    const radius = Math.max(0.0022, Math.min(0.011, 0.002 + state.flowRate * 0.000055));
-    const geo = new THREE.TubeGeometry(curve, 40, radius, 12, false);
+    const radius = Math.max(0.002, Math.min(0.009, 0.002 + state.flowRate * 0.000045));
+    const geo = new THREE.TubeGeometry(curve, 48, radius, 10, false);
     streamMesh.geometry.dispose();
     streamMesh.geometry = geo;
     streamMat.color = hexColor(beer.liquidTop);
@@ -480,7 +530,6 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
   function updateSceneFromState() {
     if (!use3d || !glassGroup || !vesselGroup) return;
 
-    // Glass always upright — no tilt
     glassGroup.rotation.set(0, 0, 0);
 
     const fillLiquid = Math.min(1, state.liquidMl / state.maxGlassMl);
@@ -492,28 +541,21 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     }
     if (foamMesh) {
       const top = fillLiquid * GLASS_H * 0.96;
-      foamMesh.position.y = top + 0.01;
-      const foamScale = 0.75 + fillFoam * 2.4;
-      foamMesh.scale.set(foamScale, Math.max(0.35, fillFoam * 9), foamScale);
+      foamMesh.position.y = top + 0.008;
+      const foamScale = 0.7 + fillFoam * 2.0;
+      foamMesh.scale.set(foamScale, Math.max(0.35, fillFoam * 7), foamScale);
       foamMesh.visible = state.foamMl > 3;
     }
 
-    // Vessel tips toward glass (+Z rotation → lip toward -X)
-    const vesselRad = THREE.MathUtils.degToRad(state.vesselAngle);
-    vesselGroup.rotation.z = vesselRad;
-    vesselGroup.position.set(
-      VESSEL_POS.x - Math.sin(vesselRad) * 0.035,
-      VESSEL_POS.y + (1 - Math.cos(vesselRad)) * 0.05,
-      VESSEL_POS.z,
-    );
+    placeVessel(state.vesselAngle);
 
     if (canMesh) canMesh.visible = state.vesselType === 'can';
     if (bottleMesh) bottleMesh.visible = state.vesselType === 'bottle';
 
     if (spillMesh) {
       const spill = clamp(state.spillMl / 80, 0, 1);
-      spillMesh.scale.setScalar(0.4 + spill * 1.4);
-      spillMesh.material.opacity = spill * 0.55;
+      spillMesh.scale.setScalar(0.35 + spill * 1.2);
+      spillMesh.material.opacity = spill * 0.5;
       spillMesh.visible = spill > 0.02;
     }
 
@@ -527,7 +569,22 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     const h = Math.max(1, rect.height);
     if (renderer && camera) {
       renderer.setSize(w, h, false);
-      camera.aspect = w / h;
+      const aspect = w / h;
+      camera.aspect = aspect;
+      // Tall mobile: pull back + lower look so vessel stays on screen
+      if (aspect < 0.75) {
+        camera.fov = 48;
+        camera.position.set(0.035, 0.14, 0.72);
+        camera.lookAt(0.035, 0.095, 0);
+      } else if (aspect < 1.1) {
+        camera.fov = 44;
+        camera.position.set(0.04, 0.15, 0.65);
+        camera.lookAt(0.04, 0.1, 0);
+      } else {
+        camera.fov = 40;
+        camera.position.set(0.05, 0.155, 0.58);
+        camera.lookAt(0.05, 0.1, 0);
+      }
       camera.updateProjectionMatrix();
     } else {
       canvas.width = w;
