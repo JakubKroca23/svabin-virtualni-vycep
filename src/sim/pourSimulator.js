@@ -1,22 +1,31 @@
-import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import {
-  DEFAULT_BEER,
-  applySip,
-  buildHud,
-  clamp,
-  createInitialState,
-  glassLathePoints,
-  resetPourState,
-  stepPhysics,
-} from './pourPhysics.js';
+const DEFAULT_BEER = {
+  id: 'svabin',
+  name: 'Svabin',
+  subtitle: 'Remeslne pivo',
+  epm: '11',
+  liquidTop: '#e8a828',
+  liquidMid: '#c67810',
+  liquidBottom: '#8c4904',
+  foamTone: '#fbf6ea',
+  paperBg: '#ece3d2',
+  inkPrimary: '#241e18',
+  inkAccent: '#9b6318',
+  haziness: 0.2,
+  carbonation: 1,
+  foamStability: 0.94,
+  illustration: 'generic',
+};
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
 function callSafely(fn, ...args) {
   if (typeof fn !== 'function') return;
   try {
     fn(...args);
   } catch {
-    // ignore
+    // SFX is best-effort; rendering/physics should continue without audio.
   }
 }
 
@@ -30,113 +39,159 @@ function safeImageUrl(value) {
       return url.href;
     }
   } catch {
-    // ignore
+    // ignore invalid URLs
   }
   return '';
 }
 
-function hexColor(hex, fallback = 0xc67810) {
-  try {
-    return new THREE.Color(hex || fallback);
-  } catch {
-    return new THREE.Color(fallback);
-  }
+const labelImageCache = new Map();
+
+function getLabelImage(url) {
+  const safe = safeImageUrl(url);
+  if (!safe || typeof Image === 'undefined') return null;
+  const cached = labelImageCache.get(safe);
+  if (cached) return cached.ready ? cached.img : null;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  const entry = { img, ready: false };
+  labelImageCache.set(safe, entry);
+  img.onload = () => {
+    entry.ready = true;
+  };
+  img.onerror = () => {
+    labelImageCache.delete(safe);
+  };
+  img.src = safe;
+  return null;
 }
 
-function baseUrl() {
-  return typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL ? import.meta.env.BASE_URL : '/';
+function drawCoverImage(ctx, img, x, y, w, h) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+  const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  const dx = x + (w - dw) * 0.5;
+  const dy = y + (h - dh) * 0.42;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  return true;
 }
 
-/**
- * Photorealistic Three.js pour simulator.
- * Glass stays upright; tip the vessel to pour; click/hold glass to sip.
- */
+function drawCoverImageFull(ctx, img, x, y, w, h) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+  const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  ctx.drawImage(img, x + (w - dw) * 0.5, y + (h - dh) * 0.5, dw, dh);
+  return true;
+}
+
+let barBgEntry = null;
+
+function getBarBackground() {
+  if (typeof Image === 'undefined') return null;
+  if (barBgEntry?.ready) return barBgEntry.img;
+  if (barBgEntry) return null;
+  const img = new Image();
+  barBgEntry = { img, ready: false };
+  const base = typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL ? import.meta.env.BASE_URL : '/';
+  img.onload = () => {
+    barBgEntry.ready = true;
+  };
+  img.onerror = () => {
+    barBgEntry = null;
+  };
+  img.src = `${base}images/bar-bg.jpg`;
+  return null;
+}
+
+function createInitialState() {
+  const waveCount = 28;
+  return {
+    selectedBeer: DEFAULT_BEER,
+    vesselType: 'can',
+    glassType: 'mug',
+    isOpened: false,
+    openProgress: 0,
+    vesselAngle: 0,
+    targetVesselAngle: 0,
+    glassTiltAngle: -28,
+    targetGlassTiltAngle: -28,
+    isGlassTiltedMode: true,
+    vesselRemainingMl: 500,
+    liquidMl: 0,
+    foamMl: 0,
+    maxGlassMl: 520,
+    sipsTaken: 0,
+    lacingRings: [],
+    flowRate: 0,
+    autoPourMode: null,
+    waveCount,
+    waveHeights: new Array(waveCount).fill(0),
+    waveVelocities: new Array(waveCount).fill(0),
+    bubbles: [],
+    foamCells: [],
+    mistParticles: [],
+    condensationDrops: [],
+    flyingCap: null,
+    isDragging: false,
+    dragStartY: 0,
+    dragStartAngle: 0,
+    pourLoopPlaying: false,
+    foamFinished: false,
+  };
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
 export function createPourSimulator({ canvas, sfx, onHud } = {}) {
-  if (!canvas) throw new Error('createPourSimulator requires a canvas');
+  if (!canvas || typeof canvas.getContext !== 'function') {
+    throw new Error('createPourSimulator requires a canvas');
+  }
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('createPourSimulator could not get a 2d context');
 
   const state = createInitialState();
+  const container = canvas.parentElement || canvas;
   let destroyed = false;
   let frameId = null;
   let resizeObserver = null;
   const removeListeners = [];
-  const textureLoader = new THREE.TextureLoader();
-  const labelCache = new Map();
-
-  const gl =
-    canvas.getContext?.('webgl2', { alpha: true, antialias: true }) ||
-    canvas.getContext?.('webgl', { alpha: true, antialias: true });
-  const use3d = Boolean(gl);
-
-  let renderer = null;
-  let scene = null;
-  let camera = null;
-  let glassGroup = null;
-  let liquidMesh = null;
-  let foamMesh = null;
-  let vesselGroup = null;
-  let canMesh = null;
-  let bottleMesh = null;
-  let streamMesh = null;
-  let streamMat = null;
-  let tableMesh = null;
-  let bgMesh = null;
-  let spillMesh = null;
-  let raycaster = null;
-  let pointerNdc = new THREE.Vector2();
-  let dragTarget = null; // 'vessel' | 'glass' | null
-  let lastFrameTime = null;
-  let sipHold = 0;
-
-  // Compact scene so glass + vessel fit on phone and desktop
-  const GLASS_H = 0.2;
-  const GLASS_HALF_W = 0.052;
-  const CAN_H = 0.12;
-  const CAN_R = 0.028;
-  /** Upright vessel center (held beside glass, fully in frame) */
-  const VESSEL_UPRIGHT = new THREE.Vector3(0.125, 0.105, 0.015);
-  let pmrem = null;
-  let envRT = null;
-
-  /** Local spout (lip) relative to vessel group origin (mesh centers). */
-  function spoutLocal() {
-    if (state.vesselType === 'can') {
-      return new THREE.Vector3(-CAN_R * 0.55, CAN_H * 0.5 - 0.002, 0);
-    }
-    // Bottle lip (matches lathe top)
-    return new THREE.Vector3(-0.009, 0.116, 0);
-  }
-
-  /**
-   * Place vessel so its lip tracks over the glass mouth when tipped.
-   * Rotation +Z tips the top toward -X (into the glass).
-   */
-  function placeVessel(angleDeg) {
-    const rad = THREE.MathUtils.degToRad(clamp(angleDeg, 0, 145));
-    const tip = clamp(angleDeg / 70, 0, 1); // engage lip-tracking early once pouring
-    vesselGroup.rotation.set(0, 0, rad);
-
-    const local = spoutLocal();
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    // Rotated spout offset from vessel origin
-    const rx = local.x * cos - local.y * sin;
-    const ry = local.x * sin + local.y * cos;
-
-    // Target world lip: just inside the rim, above liquid
-    const lipX = GLASS_HALF_W * 0.25;
-    const lipY = GLASS_H * 0.98;
-    const pourOrigin = new THREE.Vector3(lipX - rx, lipY - ry, VESSEL_UPRIGHT.z);
-
-    vesselGroup.position.lerpVectors(VESSEL_UPRIGHT, pourOrigin, tip);
-    vesselGroup.updateMatrixWorld(true);
-  }
 
   function emitHud() {
-    callSafely(onHud, buildHud(state));
+    const total = Math.round(state.liquidMl + state.foamMl);
+    const foamPct = total > 15 ? Math.round((state.foamMl / total) * 100) : 0;
+    let pourStyle = state.isOpened ? 'Otevřeno' : 'Zavřeno';
+    if (total >= 30) {
+      if (foamPct > 68) pourStyle = 'Mlíko';
+      else if (total < 360 && foamPct >= 25) pourStyle = 'Šnyt';
+      else if (foamPct >= 14 && foamPct <= 34) pourStyle = 'Hladinka';
+      else if (foamPct < 14) pourStyle = 'Bez čepice';
+      else pourStyle = 'Vysoká pěna';
+    }
+
+    callSafely(onHud, {
+      liquidMl: `${Math.min(500, Math.round(state.liquidMl))} ml`,
+      foamPct: `${foamPct} %`,
+      pourStyle,
+      canSip: total >= 40,
+      vesselRemainingMl: Math.max(0, Math.round(state.vesselRemainingMl)),
+      sipsTaken: state.sipsTaken,
+      raw: {
+        liquidMl: state.liquidMl,
+        foamMl: state.foamMl,
+        flowRate: state.flowRate,
+        vesselAngle: state.vesselAngle,
+        glassTiltAngle: state.glassTiltAngle,
+        isOpened: state.isOpened,
+      },
+    });
   }
 
   function updatePourLoop() {
-    if (state.flowRate > 4) {
+    if (state.flowRate > 0.05) {
       if (!state.pourLoopPlaying) {
         callSafely(sfx?.startLoop, 'pour-loop');
         state.pourLoopPlaying = true;
@@ -144,537 +199,1010 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     } else if (state.pourLoopPlaying) {
       callSafely(sfx?.stopLoop, 'pour-loop');
       state.pourLoopPlaying = false;
-      if (state.foamFinished) callSafely(sfx?.play, 'foam');
     }
   }
 
-  function loadLabelTexture(url) {
-    const safe = safeImageUrl(url);
-    if (!safe) return null;
-    if (labelCache.has(safe)) return labelCache.get(safe);
-    const tex = textureLoader.load(safe);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    labelCache.set(safe, tex);
-    return tex;
+  function playFoamFinish() {
+    if (state.foamFinished) return;
+    state.foamFinished = true;
+    callSafely(sfx?.play, 'foam');
   }
 
-  function makeGlassLathe(glassType) {
-    const pts = glassLathePoints(glassType, GLASS_HALF_W, GLASS_H).map((p) => new THREE.Vector2(p.x, p.y));
-    return new THREE.LatheGeometry(pts, 64);
-  }
-
-  function rebuildGlassMeshes() {
-    if (!glassGroup) return;
-    while (glassGroup.children.length) {
-      const child = glassGroup.children[0];
-      glassGroup.remove(child);
-      child.geometry?.dispose?.();
-      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose?.());
-      else child.material?.dispose?.();
-    }
-
-    const glassGeo = makeGlassLathe(state.glassType);
-    const glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      metalness: 0,
-      roughness: 0.02,
-      transmission: 1,
-      thickness: 0.55,
-      ior: 1.52,
-      transparent: true,
-      opacity: 1,
-      side: THREE.FrontSide,
-      envMapIntensity: 1.6,
-      clearcoat: 1,
-      clearcoatRoughness: 0.02,
-      specularIntensity: 1,
-      attenuationColor: new THREE.Color(0xdce9ff),
-      attenuationDistance: 0.6,
-    });
-    const glassMesh = new THREE.Mesh(glassGeo, glassMat);
-    glassMesh.castShadow = true;
-    glassMesh.receiveShadow = true;
-    glassGroup.add(glassMesh);
-
-    const liquidPts = glassLathePoints(state.glassType, GLASS_HALF_W * 0.93, GLASS_H * 0.97).map(
-      (p) => new THREE.Vector2(p.x, p.y),
-    );
-    const liquidGeo = new THREE.LatheGeometry(liquidPts, 64);
-    const beer = state.selectedBeer || DEFAULT_BEER;
-    const liquidMat = new THREE.MeshPhysicalMaterial({
-      color: hexColor(beer.liquidMid),
-      roughness: 0.22,
-      metalness: 0.0,
-      transmission: 0.35,
-      thickness: 0.8,
-      ior: 1.35,
-      transparent: true,
-      opacity: 0.96,
-      attenuationColor: hexColor(beer.liquidBottom),
-      attenuationDistance: 0.35,
-      envMapIntensity: 0.6,
-    });
-    liquidMesh = new THREE.Mesh(liquidGeo, liquidMat);
-    liquidMesh.scale.set(1, 0.001, 1);
-    liquidMesh.visible = false;
-    glassGroup.add(liquidMesh);
-
-    const foamGeo = new THREE.CylinderGeometry(GLASS_HALF_W * 0.9, GLASS_HALF_W * 0.86, 0.022, 64);
-    const foamMat = new THREE.MeshStandardMaterial({
-      color: hexColor(beer.foamTone, 0xfbf6ea),
-      roughness: 0.95,
-      metalness: 0,
-      flatShading: false,
-    });
-    foamMesh = new THREE.Mesh(foamGeo, foamMat);
-    foamMesh.visible = false;
-    glassGroup.add(foamMesh);
-
-    if (state.glassType === 'mug') {
-      const handleCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(GLASS_HALF_W * 0.88, GLASS_H * 0.74, 0),
-        new THREE.Vector3(GLASS_HALF_W * 1.62, GLASS_H * 0.66, 0),
-        new THREE.Vector3(GLASS_HALF_W * 1.62, GLASS_H * 0.28, 0),
-        new THREE.Vector3(GLASS_HALF_W * 0.88, GLASS_H * 0.26, 0),
-      ]);
-      const handleGeo = new THREE.TubeGeometry(handleCurve, 40, 0.009, 16, false);
-      const handleMat = glassMat.clone();
-      handleMat.thickness = 0.25;
-      glassGroup.add(new THREE.Mesh(handleGeo, handleMat));
+  function initCondensation() {
+    state.condensationDrops = [];
+    for (let i = 0; i < 48; i += 1) {
+      state.condensationDrops.push({
+        u: randomBetween(-0.825, 0.825),
+        v: Math.random(),
+        r: randomBetween(1, 3.1),
+        slipSpeed: Math.random() < 0.15 ? randomBetween(0.0002, 0.0008) : 0,
+      });
     }
   }
 
-  function rebuildVesselMeshes() {
-    if (!vesselGroup) return;
-    while (vesselGroup.children.length) {
-      const child = vesselGroup.children[0];
-      vesselGroup.remove(child);
-      child.geometry?.dispose?.();
-      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose?.());
-      else child.material?.dispose?.();
-    }
-    canMesh = null;
-    bottleMesh = null;
-
-    const beer = state.selectedBeer || DEFAULT_BEER;
-    const labelTex = loadLabelTexture(beer.image);
-
-    // Aluminum can (centered on vessel origin)
-    const canGeo = new THREE.CylinderGeometry(CAN_R, CAN_R, CAN_H, 64, 1, false);
-    if (labelTex) {
-      labelTex.wrapS = THREE.RepeatWrapping;
-      labelTex.repeat.set(1, 1);
-      labelTex.center.set(0.5, 0.5);
-    }
-    const canMat = new THREE.MeshPhysicalMaterial({
-      color: labelTex ? 0xffffff : 0xb0ada8,
-      metalness: labelTex ? 0.55 : 0.9,
-      roughness: labelTex ? 0.32 : 0.22,
-      map: labelTex || null,
-      clearcoat: 0.4,
-      clearcoatRoughness: 0.25,
-      envMapIntensity: 1.1,
-    });
-    canMesh = new THREE.Mesh(canGeo, canMat);
-    canMesh.castShadow = true;
-    const lid = new THREE.Mesh(
-      new THREE.CylinderGeometry(CAN_R * 0.98, CAN_R * 0.98, 0.003, 48),
-      new THREE.MeshStandardMaterial({ color: 0xd8d5d0, metalness: 0.9, roughness: 0.2 }),
-    );
-    lid.position.y = CAN_H / 2 + 0.0015;
-    canMesh.add(lid);
-    // Opening tab hint on pour side
-    const tab = new THREE.Mesh(
-      new THREE.BoxGeometry(0.012, 0.0015, 0.008),
-      new THREE.MeshStandardMaterial({ color: 0xc8c5c0, metalness: 0.95, roughness: 0.18 }),
-    );
-    tab.position.set(-CAN_R * 0.35, CAN_H / 2 + 0.003, 0);
-    canMesh.add(tab);
-    vesselGroup.add(canMesh);
-
-    // Bottle — origin near mid-body so tip rotation feels natural
-    const bottlePts = [
-      new THREE.Vector2(0.01, -0.09),
-      new THREE.Vector2(0.028, -0.07),
-      new THREE.Vector2(0.03, 0.0),
-      new THREE.Vector2(0.026, 0.035),
-      new THREE.Vector2(0.012, 0.075),
-      new THREE.Vector2(0.01, 0.105),
-      new THREE.Vector2(0.009, 0.118),
-    ];
-    const bottleGeo = new THREE.LatheGeometry(bottlePts, 48);
-    const bottleMat = new THREE.MeshPhysicalMaterial({
-      color: 0x5a2a0c,
-      metalness: 0.1,
-      roughness: 0.25,
-      transmission: 0.35,
-      thickness: 0.4,
-      transparent: true,
-      map: labelTex || null,
-    });
-    bottleMesh = new THREE.Mesh(bottleGeo, bottleMat);
-    bottleMesh.castShadow = true;
-    vesselGroup.add(bottleMesh);
-
-    canMesh.visible = state.vesselType === 'can';
-    bottleMesh.visible = state.vesselType === 'bottle';
-  }
-
-  function initScene() {
-    renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: false,
-      powerPreference: 'high-performance',
-      context: gl || undefined,
-    });
-    renderer.setClearColor(0x070504, 1);
-    renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-    scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x090705, 0.12);
-
-    // Image-based lighting for glass reflections
-    pmrem = new THREE.PMREMGenerator(renderer);
-    envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-    scene.environment = envRT.texture;
-
-    // Wider FOV + pulled back so can + glass stay in frame on mobile
-    camera = new THREE.PerspectiveCamera(42, 1, 0.01, 30);
-    camera.position.set(0.04, 0.16, 0.62);
-    camera.lookAt(0.04, 0.1, 0);
-
-    const amb = new THREE.AmbientLight(0xffe6cc, 0.25);
-    scene.add(amb);
-    const key = new THREE.DirectionalLight(0xffe0b8, 2.1);
-    key.position.set(-0.55, 1.1, 0.65);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.near = 0.1;
-    key.shadow.camera.far = 4;
-    key.shadow.camera.left = -0.6;
-    key.shadow.camera.right = 0.6;
-    key.shadow.camera.top = 0.6;
-    key.shadow.camera.bottom = -0.6;
-    key.shadow.bias = -0.0002;
-    scene.add(key);
-    const fill = new THREE.PointLight(0xa8c4ff, 0.55, 4);
-    fill.position.set(0.55, 0.35, 0.45);
-    scene.add(fill);
-    const warm = new THREE.SpotLight(0xffb070, 18, 3.5, Math.PI / 5, 0.45, 1.2);
-    warm.position.set(0.1, 0.95, 0.35);
-    warm.target.position.set(0.08, 0.05, 0);
-    scene.add(warm);
-    scene.add(warm.target);
-
-    const bgTex = textureLoader.load(`${baseUrl()}images/bar-bg.jpg`);
-    bgTex.colorSpace = THREE.SRGBColorSpace;
-    bgMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.2, 2.0),
-      new THREE.MeshStandardMaterial({ map: bgTex, roughness: 0.9, metalness: 0, emissive: 0x22180f, emissiveIntensity: 0.15 }),
-    );
-    bgMesh.position.set(0.05, 0.35, -1.05);
-    scene.add(bgMesh);
-
-    const veil = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.3, 2.1),
-      new THREE.MeshBasicMaterial({ color: 0x050302, transparent: true, opacity: 0.22 }),
-    );
-    veil.position.set(0.05, 0.35, -1.04);
-    scene.add(veil);
-
-    // Thick wooden bar top
-    tableMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1.4, 0.06, 0.65),
-      new THREE.MeshStandardMaterial({
-        color: 0x4a2e1c,
-        roughness: 0.42,
-        metalness: 0.08,
-        envMapIntensity: 0.35,
-      }),
-    );
-    tableMesh.position.set(0.05, -0.03, 0.06);
-    tableMesh.receiveShadow = true;
-    tableMesh.castShadow = true;
-    scene.add(tableMesh);
-
-    const contact = new THREE.Mesh(
-      new THREE.CircleGeometry(0.09, 48),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45 }),
-    );
-    contact.rotation.x = -Math.PI / 2;
-    contact.position.set(0, 0.001, 0);
-    scene.add(contact);
-
-    spillMesh = new THREE.Mesh(
-      new THREE.CircleGeometry(0.08, 48),
-      new THREE.MeshBasicMaterial({
-        color: 0xc47820,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      }),
-    );
-    spillMesh.rotation.x = -Math.PI / 2;
-    spillMesh.position.set(0.02, 0.002, 0.04);
-    spillMesh.visible = false;
-    scene.add(spillMesh);
-
-    glassGroup = new THREE.Group();
-    glassGroup.position.set(0, 0, 0);
-    glassGroup.name = 'glass';
-    scene.add(glassGroup);
-    rebuildGlassMeshes();
-
-    vesselGroup = new THREE.Group();
-    vesselGroup.name = 'vessel';
-    scene.add(vesselGroup);
-    rebuildVesselMeshes();
-    placeVessel(0);
-
-    raycaster = new THREE.Raycaster();
-
-    streamMat = new THREE.MeshPhysicalMaterial({
-      color: hexColor(state.selectedBeer.liquidMid),
-      roughness: 0.08,
-      metalness: 0,
-      transparent: true,
-      opacity: 0.9,
-      transmission: 0.45,
-      thickness: 0.5,
-      ior: 1.33,
-    });
-    streamMesh = new THREE.Mesh(
-      new THREE.TubeGeometry(
-        new THREE.CatmullRomCurve3([new THREE.Vector3(), new THREE.Vector3(0, -0.05, 0)]),
-        20,
-        0.004,
-        8,
-        false,
-      ),
-      streamMat,
-    );
-    streamMesh.visible = false;
-    scene.add(streamMesh);
-  }
-
-  function syncBeerMaterials() {
-    const beer = state.selectedBeer || DEFAULT_BEER;
-    if (liquidMesh) {
-      liquidMesh.material.color = hexColor(beer.liquidMid);
-    }
-    if (foamMesh) {
-      foamMesh.material.color = hexColor(beer.foamTone, 0xfbf6ea);
-    }
-    if (streamMat) {
-      streamMat.color = hexColor(beer.liquidTop);
-    }
-    rebuildVesselMeshes();
-  }
-
-  function updateStreamGeometry() {
-    if (!streamMesh || !vesselGroup || !glassGroup) return;
-    if (state.flowRate <= 2 && state.streamLagMl < 0.5) {
-      streamMesh.visible = false;
-      return;
-    }
-
-    const beer = state.selectedBeer || DEFAULT_BEER;
-    const fill = Math.min(1, (state.liquidMl + state.foamMl * 0.7) / state.maxGlassMl);
-    // Aim into the glass mouth (inner wall toward vessel), never outside the rim
-    const liquidTopY = Math.max(0.02, Math.min(GLASS_H * 0.92, fill * GLASS_H * 0.96 + 0.01));
-    const aimX = Math.min(GLASS_HALF_W * 0.35, 0.018);
-
-    vesselGroup.updateMatrixWorld(true);
-    glassGroup.updateMatrixWorld(true);
-
-    const spoutWorld = spoutLocal();
-    vesselGroup.localToWorld(spoutWorld);
-
-    const impactWorld = new THREE.Vector3(aimX, liquidTopY, 0);
-    glassGroup.localToWorld(impactWorld);
-
-    // If lip somehow ends past the glass, still pull impact inside rim
-    const glassOrigin = new THREE.Vector3();
-    glassGroup.getWorldPosition(glassOrigin);
-    const rim = GLASS_HALF_W * 0.85;
-    impactWorld.x = clamp(impactWorld.x, glassOrigin.x - rim, glassOrigin.x + rim);
-    impactWorld.z = clamp(impactWorld.z, glassOrigin.z - rim * 0.4, glassOrigin.z + rim * 0.4);
-
-    const drop = Math.max(0.008, spoutWorld.y - impactWorld.y);
-    const t1 = spoutWorld.clone().lerp(impactWorld, 0.28);
-    t1.y = spoutWorld.y - drop * 0.22;
-    const t2 = spoutWorld.clone().lerp(impactWorld, 0.62);
-    t2.y = spoutWorld.y - drop * 0.72;
-    // Tiny wobble only on Z so X stays aimed into glass
-    const wobble = Math.sin(performance.now() * 0.02) * 0.0015;
-    t1.z += wobble;
-    t2.z -= wobble * 0.6;
-
-    const curve = new THREE.CatmullRomCurve3([spoutWorld, t1, t2, impactWorld]);
-    const radius = Math.max(0.002, Math.min(0.009, 0.002 + state.flowRate * 0.000045));
-    const geo = new THREE.TubeGeometry(curve, 48, radius, 10, false);
-    streamMesh.geometry.dispose();
-    streamMesh.geometry = geo;
-    streamMat.color = hexColor(beer.liquidTop);
-    streamMesh.visible = true;
-  }
-
-  function updateSceneFromState() {
-    if (!use3d || !glassGroup || !vesselGroup) return;
-
-    glassGroup.rotation.set(0, 0, 0);
-
-    const fillLiquid = Math.min(1, state.liquidMl / state.maxGlassMl);
-    const fillFoam = Math.min(0.4, state.foamMl / state.maxGlassMl);
-    if (liquidMesh) {
-      liquidMesh.scale.set(1, Math.max(0.001, fillLiquid), 1);
-      liquidMesh.visible = state.liquidMl > 2;
-      liquidMesh.position.y = 0;
-    }
-    if (foamMesh) {
-      const top = fillLiquid * GLASS_H * 0.96;
-      foamMesh.position.y = top + 0.008;
-      const foamScale = 0.7 + fillFoam * 2.0;
-      foamMesh.scale.set(foamScale, Math.max(0.35, fillFoam * 7), foamScale);
-      foamMesh.visible = state.foamMl > 3;
-    }
-
-    placeVessel(state.vesselAngle);
-
-    if (canMesh) canMesh.visible = state.vesselType === 'can';
-    if (bottleMesh) bottleMesh.visible = state.vesselType === 'bottle';
-
-    if (spillMesh) {
-      const spill = clamp(state.spillMl / 80, 0, 1);
-      spillMesh.scale.setScalar(0.35 + spill * 1.2);
-      spillMesh.material.opacity = spill * 0.5;
-      spillMesh.visible = spill > 0.02;
-    }
-
-    updateStreamGeometry();
-  }
-
-  function resize() {
-    const parent = canvas.parentElement || canvas;
-    const rect = parent.getBoundingClientRect?.() || { width: canvas.width || 640, height: canvas.height || 480 };
-    const w = Math.max(1, rect.width);
-    const h = Math.max(1, rect.height);
-    if (renderer && camera) {
-      renderer.setSize(w, h, false);
-      const aspect = w / h;
-      camera.aspect = aspect;
-      // Tall mobile: pull back + lower look so vessel stays on screen
-      if (aspect < 0.75) {
-        camera.fov = 48;
-        camera.position.set(0.035, 0.14, 0.72);
-        camera.lookAt(0.035, 0.095, 0);
-      } else if (aspect < 1.1) {
-        camera.fov = 44;
-        camera.position.set(0.04, 0.15, 0.65);
-        camera.lookAt(0.04, 0.1, 0);
-      } else {
-        camera.fov = 40;
-        camera.position.set(0.05, 0.155, 0.58);
-        camera.lookAt(0.05, 0.1, 0);
-      }
-      camera.updateProjectionMatrix();
-    } else {
-      canvas.width = w;
-      canvas.height = h;
+  function initFoamCells() {
+    state.foamCells = [];
+    for (let i = 0; i < 75; i += 1) {
+      state.foamCells.push({
+        u: randomBetween(-0.925, 0.925),
+        v: Math.random(),
+        r: randomBetween(1.8, 5.6),
+      });
     }
   }
 
-  function loop(now) {
-    if (destroyed) return;
-    const t = typeof now === 'number' ? now : performance.now();
-    const dt = lastFrameTime == null ? 1 / 60 : (t - lastFrameTime) / 1000;
-    lastFrameTime = t;
-
-    if (dragTarget === 'glass' && (state.liquidMl + state.foamMl) >= 25) {
-      sipHold += dt;
-      if (sipHold >= 0.28) {
-        sipHold = 0;
-        if (applySip(state, 55)) callSafely(sfx?.play, 'sip');
-      }
-    }
-
-    stepPhysics(state, dt);
-    updatePourLoop();
-    emitHud();
-    if (use3d) {
-      updateSceneFromState();
-      renderer.render(scene, camera);
-    }
-    frameId = globalThis.requestAnimationFrame?.(loop) ?? null;
+  function resizeCanvas() {
+    const rect = container.getBoundingClientRect?.() || canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width || 1);
+    const height = Math.max(1, rect.height || 1);
+    const dpr = Math.min(globalThis.devicePixelRatio || globalThis.window?.devicePixelRatio || 1, 2);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform?.(dpr, 0, 0, dpr, 0, 0);
+    renderScene();
   }
 
   function triggerOpen() {
-    if (state.isOpened) return;
+    if (state.isOpened) {
+      setTilt(state.targetVesselAngle < 50 ? 84 : 0);
+      return;
+    }
+
     state.isOpened = true;
     callSafely(sfx?.play, state.vesselType === 'can' ? 'can-open' : 'bottle-open');
+    for (let i = 0; i < 32; i += 1) {
+      state.mistParticles.push({
+        xOffset: randomBetween(-8, 8),
+        yOffset: -Math.random() * 10,
+        vx: randomBetween(-0.9, 0.9),
+        vy: randomBetween(-3.7, -1.2),
+        r: randomBetween(4, 14),
+        alpha: randomBetween(0.45, 0.75),
+      });
+    }
+    if (state.vesselType === 'bottle') {
+      state.flyingCap = {
+        x: 0,
+        y: 0,
+        vx: randomBetween(4, 6.5),
+        vy: randomBetween(-10, -8),
+        angle: 0,
+        vAngle: 0.25,
+      };
+    }
     emitHud();
   }
 
-  function setTilt(angle) {
-    state.targetVesselAngle = clamp(Number(angle) || 0, 0, 145);
+  function setTilt(value) {
+    const numeric = clamp(Number(value) || 0, 0, 135);
+    if (!state.isOpened && numeric > 10) triggerOpen();
     state.autoPourMode = null;
+    state.targetVesselAngle = numeric;
+    if (numeric > 5) state.foamFinished = false;
+    emitHud();
+  }
+
+  function evaluateTapsterPour() {
+    const total = state.liquidMl + state.foamMl;
+    if (total >= 80) playFoamFinish();
+  }
+
+  function updateAutoPour(fillRatio) {
+    if (!state.autoPourMode) return;
+
+    if (state.autoPourMode === 'hladinka') {
+      if (fillRatio < 0.72) {
+        state.targetGlassTiltAngle = -28;
+        state.targetVesselAngle = 86;
+      } else if (fillRatio < 0.96 && state.vesselRemainingMl > 10) {
+        state.targetGlassTiltAngle = 0;
+        state.targetVesselAngle = 112;
+      } else {
+        state.targetVesselAngle = 0;
+        state.targetGlassTiltAngle = 0;
+        state.autoPourMode = null;
+        evaluateTapsterPour();
+      }
+    } else if (state.autoPourMode === 'snyt') {
+      if (fillRatio < 0.42) {
+        state.targetGlassTiltAngle = -20;
+        state.targetVesselAngle = 92;
+      } else if (fillRatio < 0.68) {
+        state.targetGlassTiltAngle = 0;
+        state.targetVesselAngle = 122;
+      } else {
+        state.targetVesselAngle = 0;
+        state.targetGlassTiltAngle = 0;
+        state.autoPourMode = null;
+        evaluateTapsterPour();
+      }
+    } else if (state.autoPourMode === 'mliko') {
+      if (fillRatio < 0.92 && state.vesselRemainingMl > 40) {
+        state.targetGlassTiltAngle = 0;
+        state.targetVesselAngle = 130;
+      } else {
+        state.targetVesselAngle = 0;
+        state.targetGlassTiltAngle = 0;
+        state.autoPourMode = null;
+        evaluateTapsterPour();
+      }
+    }
+  }
+
+  function updatePhysics() {
+    const beer = state.selectedBeer || DEFAULT_BEER;
+    const totalInGlass = state.liquidMl + state.foamMl;
+    const fillRatio = Math.min(1, totalInGlass / state.maxGlassMl);
+    const previousFlowRate = state.flowRate;
+
+    updateAutoPour(fillRatio);
+    if (!state.autoPourMode) {
+      if (fillRatio > 0.78 && state.isGlassTiltedMode) {
+        const straightenFactor = Math.min(1, (fillRatio - 0.78) / 0.18);
+        state.targetGlassTiltAngle = -28 * (1 - straightenFactor);
+      } else if (state.isGlassTiltedMode) {
+        state.targetGlassTiltAngle = -28;
+      }
+    }
+
+    state.vesselAngle += (state.targetVesselAngle - state.vesselAngle) * 0.14;
+    state.glassTiltAngle += (state.targetGlassTiltAngle - state.glassTiltAngle) * 0.12;
+    if (state.isOpened && state.openProgress < 1) {
+      state.openProgress = Math.min(1, state.openProgress + 0.12);
+    }
+
+    const minPourAngle = 42 + (1 - state.vesselRemainingMl / 500) * 38;
+    if (
+      state.isOpened &&
+      state.vesselAngle > minPourAngle &&
+      state.vesselRemainingMl > 0 &&
+      totalInGlass < state.maxGlassMl * 1.03
+    ) {
+      const tiltExcess = (state.vesselAngle - minPourAngle) / (135 - minPourAngle);
+      state.flowRate = clamp(Math.pow(tiltExcess, 1.15) * 3.4, 0.2, 3.4);
+      const actualOut = Math.min(state.vesselRemainingMl, state.flowRate);
+      state.vesselRemainingMl -= actualOut;
+
+      const glassWallGentleFactor = Math.abs(state.glassTiltAngle) / 28;
+      const pourHeightFactor = 1 - fillRatio * 0.55;
+      const vigorFoamRatio = Math.min(
+        0.82,
+        (0.14 + tiltExcess * 0.36 * pourHeightFactor) *
+          (1 - glassWallGentleFactor * 0.55) *
+          beer.carbonation,
+      );
+
+      const addedFoam = actualOut * vigorFoamRatio * 1.35;
+      const addedLiquid = actualOut * (1 - vigorFoamRatio * 0.65);
+      state.liquidMl = Math.min(state.maxGlassMl, state.liquidMl + addedLiquid);
+      state.foamMl = Math.min(state.maxGlassMl - state.liquidMl * 0.85, state.foamMl + addedFoam);
+
+      const centerWave = Math.floor(state.waveCount / 2);
+      state.waveVelocities[centerWave] -= state.flowRate * 0.5;
+      const bubbleSpawnCount = Math.ceil(state.flowRate * 1.6 * beer.carbonation);
+      for (let i = 0; i < bubbleSpawnCount && state.bubbles.length < 200; i += 1) {
+        state.bubbles.push({
+          u: randomBetween(-0.65, 0.65),
+          v: Math.random() * 0.85,
+          r: randomBetween(0.9, 3.3),
+          vy: randomBetween(0.007, 0.021),
+          wobble: Math.random() * Math.PI * 2,
+        });
+      }
+    } else {
+      if (previousFlowRate > 0.1 && totalInGlass > 80) evaluateTapsterPour();
+      state.flowRate = 0;
+    }
+
+    updatePourLoop();
+    updateParticles(beer);
+    emitHud();
+  }
+
+  function updateParticles(beer) {
+    if (state.foamMl > 2) {
+      const settleRate = (1 - beer.foamStability) * 0.25 + 0.012;
+      const settled = Math.min(state.foamMl, settleRate);
+      state.foamMl -= settled;
+      state.liquidMl = Math.min(state.maxGlassMl, state.liquidMl + settled * 0.35);
+    }
+
+    if (state.liquidMl > 40 && Math.random() < 0.4 * beer.carbonation && state.bubbles.length < 200) {
+      state.bubbles.push({
+        u: randomBetween(-0.6, 0.6),
+        v: 0.02,
+        r: randomBetween(0.8, 2.7),
+        vy: randomBetween(0.006, 0.016),
+        wobble: Math.random() * Math.PI * 2,
+      });
+    }
+
+    for (let i = state.bubbles.length - 1; i >= 0; i -= 1) {
+      const b = state.bubbles[i];
+      b.v += b.vy;
+      b.wobble += 0.1;
+      b.u += Math.sin(b.wobble) * 0.0035;
+      if (b.v >= 1) state.bubbles.splice(i, 1);
+    }
+
+    for (let i = 0; i < state.waveCount; i += 1) {
+      const force = -0.08 * state.waveHeights[i];
+      state.waveVelocities[i] = (state.waveVelocities[i] + force) * 0.9;
+      state.waveHeights[i] += state.waveVelocities[i];
+    }
+    for (let i = 0; i < state.waveCount; i += 1) {
+      if (i > 0) state.waveVelocities[i - 1] += (state.waveHeights[i] - state.waveHeights[i - 1]) * 0.06;
+      if (i < state.waveCount - 1) state.waveVelocities[i + 1] += (state.waveHeights[i] - state.waveHeights[i + 1]) * 0.06;
+    }
+
+    for (let i = state.mistParticles.length - 1; i >= 0; i -= 1) {
+      const m = state.mistParticles[i];
+      m.xOffset += m.vx;
+      m.yOffset += m.vy;
+      m.r += 0.3;
+      m.alpha -= 0.014;
+      if (m.alpha <= 0) state.mistParticles.splice(i, 1);
+    }
+
+    if (state.flyingCap) {
+      state.flyingCap.x += state.flyingCap.vx;
+      state.flyingCap.y += state.flyingCap.vy;
+      state.flyingCap.vy += 0.46;
+      state.flyingCap.angle += state.flyingCap.vAngle;
+      if (state.flyingCap.y > 600) state.flyingCap = null;
+    }
+  }
+
+  function getGlassProfile(normY, glassType, halfW) {
+    if (glassType === 'teku') {
+      if (normY < 0.05) return halfW * (0.66 - normY * 6);
+      if (normY < 0.3) return halfW * 0.14;
+      if (normY < 0.56) {
+        const t = (normY - 0.3) / 0.26;
+        return halfW * (0.14 + Math.sin(t * Math.PI * 0.5) * 0.92);
+      }
+      const t = (normY - 0.56) / 0.44;
+      return halfW * (1.06 - t * 0.26);
+    }
+    if (glassType === 'pint') {
+      const swell = Math.sin(Math.max(0, (normY - 0.6) / 0.4) * Math.PI) * 0.07;
+      return halfW * (0.72 + normY * 0.27 + swell);
+    }
+    const barrelCurve = Math.sin(normY * Math.PI) * 0.14;
+    return halfW * (0.86 + barrelCurve);
+  }
+
+  function renderScene() {
+    const rect = canvas.getBoundingClientRect();
+    const W = rect.width;
+    const H = rect.height;
+    if (!W || !H) return;
+    const beer = state.selectedBeer || DEFAULT_BEER;
+    getLabelImage(beer.image);
+
+    ctx.clearRect(0, 0, W, H);
+
+    const tableY = H * 0.84;
+    const barBg = getBarBackground();
+    if (barBg) {
+      ctx.save();
+      drawCoverImageFull(ctx, barBg, 0, 0, W, tableY + 20);
+      // Darken + warm grade so glass/vessel stay readable
+      const grade = ctx.createLinearGradient(0, 0, 0, tableY);
+      grade.addColorStop(0, 'rgba(8, 5, 3, 0.55)');
+      grade.addColorStop(0.45, 'rgba(12, 8, 5, 0.42)');
+      grade.addColorStop(1, 'rgba(6, 4, 2, 0.72)');
+      ctx.fillStyle = grade;
+      ctx.fillRect(0, 0, W, tableY + 20);
+      const spotlight = ctx.createRadialGradient(W * 0.4, H * 0.35, 30, W * 0.4, H * 0.4, Math.max(W, H) * 0.55);
+      spotlight.addColorStop(0, 'rgba(255, 200, 120, 0.08)');
+      spotlight.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+      ctx.fillStyle = spotlight;
+      ctx.fillRect(0, 0, W, tableY + 20);
+      ctx.restore();
+    } else {
+      const wallGrad = ctx.createRadialGradient(W * 0.38, H * 0.22, 20, W * 0.42, H * 0.45, Math.max(W, H) * 0.85);
+      wallGrad.addColorStop(0, '#3a2c20');
+      wallGrad.addColorStop(0.35, '#1c1612');
+      wallGrad.addColorStop(1, '#070605');
+      ctx.fillStyle = wallGrad;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // Bar counter / table in front of photo
+    const tableGrad = ctx.createLinearGradient(0, tableY - 10, 0, H);
+    tableGrad.addColorStop(0, '#5a3d28');
+    tableGrad.addColorStop(0.08, '#3a2618');
+    tableGrad.addColorStop(0.35, '#22160f');
+    tableGrad.addColorStop(1, '#0a0604');
+    ctx.fillStyle = tableGrad;
+    ctx.fillRect(0, tableY, W, H - tableY);
+    ctx.save();
+    ctx.globalAlpha = 0.1;
+    for (let i = 0; i < 12; i += 1) {
+      const y = tableY + 5 + i * ((H - tableY) / 12);
+      ctx.strokeStyle = i % 2 === 0 ? '#a07850' : '#140c08';
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(W * 0.4, y - 2, W * 0.7, y + 2, W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255, 220, 170, 0.12)';
+    ctx.fillRect(0, tableY, W, 1.5);
+
+    const scale = Math.min(1.12, Math.max(0.72, Math.min(W / 540, H / 540)));
+    const glassCenterX = W * 0.39;
+    const glassBottomY = tableY - 8 * scale;
+    const glassH = 248 * scale;
+    const glassHalfW = 67 * scale;
+    const glassTiltRad = (state.glassTiltAngle * Math.PI) / 180;
+
+    const shadowGrad = ctx.createRadialGradient(glassCenterX, glassBottomY + 4 * scale, 4, glassCenterX, glassBottomY + 4 * scale, glassHalfW * 1.55);
+    shadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.78)');
+    shadowGrad.addColorStop(0.55, 'rgba(0, 0, 0, 0.28)');
+    shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = shadowGrad;
+    ctx.beginPath();
+    ctx.ellipse(glassCenterX, glassBottomY + 4 * scale, glassHalfW * 1.45, 14 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const vesselPivotX = glassCenterX + 132 * scale;
+    const vesselPivotY = glassBottomY - glassH - 48 * scale;
+    const vesselTiltRad = (-state.vesselAngle * Math.PI) / 180;
+    const canW = (state.vesselType === 'can' ? 78 : 70) * scale;
+    const canH = (state.vesselType === 'can' ? 150 : 200) * scale;
+    const localSpoutX = -canW * 0.28;
+    const localSpoutY = -canH * 0.5;
+    const spoutWorldX = vesselPivotX + (localSpoutX * Math.cos(vesselTiltRad) - localSpoutY * Math.sin(vesselTiltRad));
+    const spoutWorldY = vesselPivotY + (localSpoutX * Math.sin(vesselTiltRad) + localSpoutY * Math.cos(vesselTiltRad));
+
+    // Vessel shadow on table
+    const vShadow = ctx.createRadialGradient(vesselPivotX - 10 * scale, tableY + 2, 4, vesselPivotX, tableY + 2, canW * 1.4);
+    vShadow.addColorStop(0, 'rgba(0,0,0,0.45)');
+    vShadow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = vShadow;
+    ctx.beginPath();
+    ctx.ellipse(vesselPivotX - 8 * scale, tableY + 2, canW * 1.1, 10 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (state.flowRate > 0.05) {
+      drawPourStream(spoutWorldX, spoutWorldY, glassCenterX, glassBottomY, glassH, glassTiltRad, scale, beer);
+    }
+    drawBeerGlass(glassCenterX, glassBottomY, glassH, glassHalfW, glassTiltRad, scale, beer);
+    drawBeerVessel(vesselPivotX, vesselPivotY, canW, canH, vesselTiltRad, scale, beer);
+    drawParticlesAndCap(spoutWorldX, spoutWorldY);
+  }
+
+  function drawPourStream(sx, sy, gx, gy, glassH, glassTiltRad, scale, beer) {
+    const totalFill = Math.min(1, (state.liquidMl + state.foamMl * 0.7) / state.maxGlassMl);
+    const minLevel = state.glassType === 'teku' ? 0.3 : 0.05;
+    const currentNormY = minLevel + totalFill * (0.94 - minLevel);
+    const localTargetY = -currentNormY * glassH;
+    const localTargetX = state.isGlassTiltedMode ? 18 * scale : 0;
+    const targetX = gx + (localTargetX * Math.cos(glassTiltRad) - localTargetY * Math.sin(glassTiltRad));
+    const targetY = gy + (localTargetX * Math.sin(glassTiltRad) + localTargetY * Math.cos(glassTiltRad));
+    const baseWidth = Math.max(2.2, Math.min(13, state.flowRate * 3.8)) * scale;
+    const time = (globalThis.performance?.now?.() || Date.now()) * 0.001;
+
+    const pointOnStream = (t, wobbleAmp) => {
+      const wobble = Math.sin(time * 18 + t * 9) * wobbleAmp + Math.sin(time * 31 + t * 14) * wobbleAmp * 0.35;
+      const x = sx + (targetX - sx) * t + wobble;
+      const y = sy + (targetY - sy) * (t * t * 0.35 + t * 0.65);
+      return { x, y };
+    };
+
+    ctx.save();
+    // Soft shadow under stream
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+    ctx.lineWidth = baseWidth * 1.35;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(sx + 2, sy + 3);
+    for (let i = 1; i <= 16; i += 1) {
+      const p = pointOnStream(i / 16, 1.2 * scale);
+      ctx.lineTo(p.x + 2, p.y + 3);
+    }
+    ctx.stroke();
+
+    // Core amber body (multiple filaments)
+    const filaments = [
+      { offset: 0, width: 1, alpha: 0.95 },
+      { offset: -0.55, width: 0.45, alpha: 0.55 },
+      { offset: 0.5, width: 0.4, alpha: 0.5 },
+    ];
+    filaments.forEach((f) => {
+      const grad = ctx.createLinearGradient(sx, sy, targetX, targetY);
+      grad.addColorStop(0, beer.liquidBottom);
+      grad.addColorStop(0.4, beer.liquidMid);
+      grad.addColorStop(0.8, beer.liquidTop);
+      grad.addColorStop(1, beer.foamTone);
+      ctx.strokeStyle = grad;
+      ctx.globalAlpha = f.alpha;
+      ctx.lineWidth = baseWidth * f.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      const start = pointOnStream(0, 0);
+      ctx.moveTo(start.x + f.offset * baseWidth, start.y);
+      for (let i = 1; i <= 20; i += 1) {
+        const p = pointOnStream(i / 20, (2.4 + state.flowRate * 0.6) * scale);
+        ctx.lineTo(p.x + f.offset * baseWidth, p.y);
+      }
+      ctx.stroke();
+    });
+
+    // Specular ribbon
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = 'rgba(255, 250, 235, 0.7)';
+    ctx.lineWidth = Math.max(1, baseWidth * 0.18);
+    ctx.beginPath();
+    ctx.moveTo(sx - baseWidth * 0.15, sy);
+    for (let i = 1; i <= 18; i += 1) {
+      const p = pointOnStream(i / 18, 1.6 * scale);
+      ctx.lineTo(p.x - baseWidth * 0.18, p.y);
+    }
+    ctx.stroke();
+
+    // Droplet spray near spout + splash at impact
+    ctx.globalAlpha = 1;
+    const dropletCount = Math.min(18, Math.floor(state.flowRate * 6));
+    for (let i = 0; i < dropletCount; i += 1) {
+      const t = 0.05 + Math.random() * 0.35;
+      const p = pointOnStream(t, 3.5 * scale);
+      const r = (0.6 + Math.random() * 1.8) * scale;
+      ctx.fillStyle = Math.random() > 0.45 ? beer.liquidTop : beer.foamTone;
+      ctx.globalAlpha = 0.35 + Math.random() * 0.45;
+      ctx.beginPath();
+      ctx.arc(p.x + (Math.random() - 0.5) * 8 * scale, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Impact splash crown
+    ctx.globalAlpha = Math.min(0.75, state.flowRate * 0.22);
+    for (let i = 0; i < 7; i += 1) {
+      const a = -Math.PI / 2 + (i - 3) * 0.22;
+      const len = (6 + state.flowRate * 3 + Math.sin(time * 40 + i) * 2) * scale;
+      ctx.strokeStyle = beer.foamTone;
+      ctx.lineWidth = 1.4 * scale;
+      ctx.beginPath();
+      ctx.moveTo(targetX, targetY);
+      ctx.lineTo(targetX + Math.cos(a) * len, targetY + Math.sin(a) * len * 0.55);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function buildGlassPath(glassH, glassHalfW, inset = 0) {
+    const steps = 40;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i += 1) {
+      const normY = i / steps;
+      const w = Math.max(4, getGlassProfile(normY, state.glassType, glassHalfW) - inset);
+      const y = -normY * glassH;
+      if (i === 0) ctx.moveTo(-w, y);
+      else ctx.lineTo(-w, y);
+    }
+    for (let i = steps; i >= 0; i -= 1) {
+      const normY = i / steps;
+      const w = Math.max(4, getGlassProfile(normY, state.glassType, glassHalfW) - inset);
+      const y = -normY * glassH;
+      ctx.lineTo(w, y);
+    }
+    ctx.closePath();
+  }
+
+  function drawBeerGlass(gx, gy, glassH, glassHalfW, glassTiltRad, scale, beer) {
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(glassTiltRad);
+
+    const thickness = 5.5 * scale;
+    const rimY = -glassH * 0.985;
+    const rimOuterW = getGlassProfile(0.985, state.glassType, glassHalfW);
+    const rimInnerW = Math.max(6, rimOuterW - thickness * 0.85);
+    const rimEllipseH = 7.5 * scale;
+    const baseY = 0;
+    const baseOuterW = getGlassProfile(0.02, state.glassType, glassHalfW);
+
+    // Foot / base ellipse (3D contact with table)
+    ctx.save();
+    const footGrad = ctx.createRadialGradient(0, baseY, 2, 0, baseY, baseOuterW * 1.15);
+    footGrad.addColorStop(0, 'rgba(255,255,255,0.18)');
+    footGrad.addColorStop(0.55, 'rgba(200,200,200,0.08)');
+    footGrad.addColorStop(1, 'rgba(0,0,0,0.25)');
+    ctx.fillStyle = footGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, baseY + 2 * scale, baseOuterW * 1.08, 8 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Mug handle with depth (behind / in front suggestion)
+    if (state.glassType === 'mug') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(220, 220, 220, 0.22)';
+      ctx.lineWidth = 14 * scale;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(glassHalfW * 0.9, -glassH * 0.74);
+      ctx.bezierCurveTo(glassHalfW * 1.58, -glassH * 0.76, glassHalfW * 1.58, -glassH * 0.28, glassHalfW * 0.88, -glassH * 0.3);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 3.5 * scale;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(glassHalfW * 0.92, -glassH * 0.72);
+      ctx.bezierCurveTo(glassHalfW * 1.48, -glassH * 0.72, glassHalfW * 1.48, -glassH * 0.32, glassHalfW * 0.9, -glassH * 0.32);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Outer glass shell (translucent volume)
+    buildGlassPath(glassH, glassHalfW);
+    const shellGrad = ctx.createLinearGradient(-glassHalfW, 0, glassHalfW, 0);
+    shellGrad.addColorStop(0, 'rgba(210, 230, 255, 0.16)');
+    shellGrad.addColorStop(0.18, 'rgba(255, 255, 255, 0.05)');
+    shellGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.02)');
+    shellGrad.addColorStop(0.82, 'rgba(255, 255, 255, 0.06)');
+    shellGrad.addColorStop(1, 'rgba(180, 200, 230, 0.18)');
+    ctx.fillStyle = shellGrad;
+    ctx.fill();
+
+    // Inner cavity + liquid (clipped to inner wall for thickness)
+    ctx.save();
+    buildGlassPath(glassH, glassHalfW, thickness);
+    ctx.clip();
+    drawGlassContents(glassH, glassHalfW, glassTiltRad, scale, beer);
+    // Inner wall refraction tint
+    const innerTint = ctx.createLinearGradient(-glassHalfW, 0, glassHalfW, 0);
+    innerTint.addColorStop(0, 'rgba(255,255,255,0.08)');
+    innerTint.addColorStop(0.5, 'rgba(255,255,255,0)');
+    innerTint.addColorStop(1, 'rgba(120,160,200,0.1)');
+    ctx.fillStyle = innerTint;
+    ctx.fillRect(-glassHalfW * 1.2, -glassH, glassHalfW * 2.4, glassH + 20);
+    ctx.restore();
+
+    // Glass wall thickness band (outer stroke vs inner)
+    buildGlassPath(glassH, glassHalfW);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+    ctx.lineWidth = 1.6 * scale;
+    ctx.stroke();
+    buildGlassPath(glassH, glassHalfW, thickness);
+    ctx.strokeStyle = 'rgba(180, 200, 220, 0.22)';
+    ctx.lineWidth = 1.1 * scale;
+    ctx.stroke();
+
+    // 3D rim: outer + inner ellipses (looks into the glass)
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.beginPath();
+    ctx.ellipse(0, rimY, rimOuterW, rimEllipseH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(10, 12, 16, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, rimY + 0.8 * scale, rimInnerW, rimEllipseH * 0.72, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 2.2 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, rimY, rimOuterW, rimEllipseH, 0, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.lineWidth = 1.4 * scale;
+    ctx.beginPath();
+    ctx.ellipse(0, rimY + 1.2 * scale, rimInnerW, rimEllipseH * 0.7, 0, 0.15, Math.PI - 0.15);
+    ctx.stroke();
+    ctx.restore();
+
+    // Primary specular (left) + secondary (right) for 3D cylinder
+    const reflGrad = ctx.createLinearGradient(0, -glassH * 0.95, 0, -glassH * 0.15);
+    reflGrad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+    reflGrad.addColorStop(0.35, 'rgba(255, 255, 255, 0.18)');
+    reflGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.strokeStyle = reflGrad;
+    ctx.lineWidth = 6 * scale;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-glassHalfW * 0.7, -glassH * 0.9);
+    ctx.quadraticCurveTo(-glassHalfW * 0.74, -glassH * 0.55, -glassHalfW * 0.62, -glassH * 0.2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 2.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(glassHalfW * 0.58, -glassH * 0.82);
+    ctx.lineTo(glassHalfW * 0.55, -glassH * 0.28);
+    ctx.stroke();
+
+    // Etched brand
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#f5f0e6';
+    ctx.font = `500 ${Math.round(11 * scale)}px Fraunces, Georgia, serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Švabín', 0, -glassH * 0.58);
+    ctx.restore();
+    ctx.restore();
+  }
+
+  function drawGlassContents(glassH, glassHalfW, glassTiltRad, scale, beer) {
+    const minBowlY = state.glassType === 'teku' ? 0.31 : 0.065;
+    const usableH = glassH * (0.96 - minBowlY);
+    const baseBowlPx = -minBowlY * glassH;
+    const liquidRatio = Math.min(1, state.liquidMl / state.maxGlassMl);
+    const foamRatio = Math.min(1 - liquidRatio * 0.85, state.foamMl / state.maxGlassMl);
+    const liquidTopY = baseBowlPx - liquidRatio * usableH;
+    const foamTopY = liquidTopY - foamRatio * usableH;
+    const surfaceSlope = Math.tan(-glassTiltRad * 0.78) * glassHalfW;
+
+    if (state.lacingRings.length > 0) {
+      ctx.strokeStyle = 'rgba(250, 244, 232, 0.42)';
+      ctx.lineWidth = 3 * scale;
+      state.lacingRings.forEach((rRatio) => {
+        const ringY = baseBowlPx - rRatio * usableH;
+        ctx.beginPath();
+        ctx.moveTo(-glassHalfW * 1.2, ringY);
+        ctx.quadraticCurveTo(0, ringY + 4 * scale, glassHalfW * 1.2, ringY);
+        ctx.stroke();
+      });
+    }
+
+    if (state.liquidMl > 2) {
+      const liqGrad = ctx.createLinearGradient(0, foamTopY, 0, baseBowlPx);
+      liqGrad.addColorStop(0, beer.liquidTop);
+      liqGrad.addColorStop(0.5, beer.liquidMid);
+      liqGrad.addColorStop(1, beer.liquidBottom);
+      ctx.fillStyle = liqGrad;
+      ctx.beginPath();
+      ctx.moveTo(-glassHalfW * 1.3, baseBowlPx + 20);
+      ctx.lineTo(-glassHalfW * 1.3, liquidTopY - surfaceSlope);
+      for (let i = 0; i < state.waveCount; i += 1) {
+        const t = i / (state.waveCount - 1);
+        const wx = (-1.2 + t * 2.4) * glassHalfW;
+        const tiltOffset = (t - 0.5) * 2 * surfaceSlope;
+        const wy = liquidTopY + tiltOffset + state.waveHeights[i] * scale;
+        ctx.lineTo(wx, wy);
+      }
+      ctx.lineTo(glassHalfW * 1.3, baseBowlPx + 20);
+      ctx.closePath();
+      ctx.fill();
+
+      const sssGrad = ctx.createRadialGradient(0, (liquidTopY + baseBowlPx) * 0.52, 4, 0, (liquidTopY + baseBowlPx) * 0.52, glassHalfW * 0.95);
+      sssGrad.addColorStop(0, `rgba(255, 220, 120, ${0.24 + beer.haziness * 0.18})`);
+      sssGrad.addColorStop(0.7, 'rgba(255, 190, 70, 0.05)');
+      sssGrad.addColorStop(1, 'rgba(0, 0, 0, 0.22)');
+      ctx.fillStyle = sssGrad;
+      ctx.fillRect(-glassHalfW * 1.2, foamTopY, glassHalfW * 2.4, usableH);
+
+      ctx.fillStyle = 'rgba(255, 248, 230, 0.42)';
+      state.bubbles.forEach((b) => {
+        const bx = b.u * glassHalfW * 0.85;
+        const by = baseBowlPx - b.v * (liquidRatio * usableH);
+        if (by > liquidTopY) {
+          ctx.beginPath();
+          ctx.arc(bx, by, b.r * scale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    if (state.foamMl > 2) {
+      const foamGrad = ctx.createLinearGradient(0, foamTopY - 10 * scale, 0, liquidTopY + 8 * scale);
+      foamGrad.addColorStop(0, '#ffffff');
+      foamGrad.addColorStop(0.65, beer.foamTone);
+      foamGrad.addColorStop(1, '#dfd3be');
+      ctx.fillStyle = foamGrad;
+      ctx.beginPath();
+      ctx.moveTo(-glassHalfW * 1.3, liquidTopY - surfaceSlope + 4 * scale);
+      for (let i = 0; i < state.waveCount; i += 1) {
+        const t = i / (state.waveCount - 1);
+        const wx = (-1.2 + t * 2.4) * glassHalfW;
+        const tiltOffset = (t - 0.5) * 2 * surfaceSlope;
+        const dome = Math.sin(t * Math.PI) * 7 * scale;
+        const wy = foamTopY + tiltOffset - dome + state.waveHeights[i] * 0.6 * scale;
+        ctx.lineTo(wx, wy);
+      }
+      for (let i = state.waveCount - 1; i >= 0; i -= 1) {
+        const t = i / (state.waveCount - 1);
+        const wx = (-1.2 + t * 2.4) * glassHalfW;
+        const tiltOffset = (t - 0.5) * 2 * surfaceSlope;
+        const wy = liquidTopY + tiltOffset + state.waveHeights[i] * scale + 3 * scale;
+        ctx.lineTo(wx, wy);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(195, 178, 150, 0.18)';
+      const foamHeightPx = Math.max(4, liquidTopY - foamTopY);
+      state.foamCells.forEach((cell) => {
+        const cx = cell.u * glassHalfW * 0.85;
+        const cy = foamTopY + cell.u * 0.5 * surfaceSlope + cell.v * foamHeightPx;
+        ctx.beginPath();
+        ctx.arc(cx, cy, cell.r * scale * 0.65, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    if (state.liquidMl + state.foamMl > 40) {
+      const dewAlpha = Math.min(0.32, ((state.liquidMl + state.foamMl) / state.maxGlassMl) * 0.32);
+      ctx.fillStyle = `rgba(255, 252, 245, ${dewAlpha})`;
+      state.condensationDrops.forEach((drop) => {
+        if (drop.slipSpeed > 0) {
+          drop.v -= drop.slipSpeed;
+          if (drop.v < 0.08) drop.v = 0.88;
+        }
+        const dx = drop.u * glassHalfW * 0.88;
+        const dy = baseBowlPx - drop.v * usableH;
+        if (dy > foamTopY) {
+          ctx.beginPath();
+          ctx.arc(dx, dy, drop.r * scale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+  }
+
+  function drawBeerVessel(vx, vy, canW, canH, vesselTiltRad, scale, beer) {
+    ctx.save();
+    ctx.translate(vx, vy);
+    ctx.rotate(vesselTiltRad);
+    const halfW = canW * 0.5;
+    const halfH = canH * 0.5;
+    const labelImg = getLabelImage(beer.image);
+
+    if (state.vesselType === 'can') {
+      // Aluminum body
+      const bodyGrad = ctx.createLinearGradient(-halfW, 0, halfW, 0);
+      bodyGrad.addColorStop(0, '#1a1a1a');
+      bodyGrad.addColorStop(0.18, '#6e6a66');
+      bodyGrad.addColorStop(0.42, '#c8c4bf');
+      bodyGrad.addColorStop(0.58, '#9a9691');
+      bodyGrad.addColorStop(0.82, '#3a3835');
+      bodyGrad.addColorStop(1, '#121110');
+      ctx.beginPath();
+      ctx.roundRect(-halfW, -halfH, canW, canH, 7 * scale);
+      ctx.fillStyle = bodyGrad;
+      ctx.fill();
+
+      // Product wrap (real packshot)
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(-halfW + 1.5 * scale, -halfH + 10 * scale, canW - 3 * scale, canH - 22 * scale, 4 * scale);
+      ctx.clip();
+      const drew = drawCoverImage(ctx, labelImg, -halfW, -halfH + 6 * scale, canW, canH - 14 * scale);
+      if (!drew) {
+        const fallback = ctx.createLinearGradient(0, -halfH, 0, halfH);
+        fallback.addColorStop(0, beer.paperBg || '#e8dfd0');
+        fallback.addColorStop(1, beer.liquidMid || '#c67810');
+        ctx.fillStyle = fallback;
+        ctx.fillRect(-halfW, -halfH, canW, canH);
+        ctx.fillStyle = beer.inkPrimary || '#1a1510';
+        ctx.font = `600 ${Math.round(14 * scale)}px Fraunces, Georgia, serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(beer.name || 'Švabín', 0, 4 * scale);
+      }
+      ctx.restore();
+
+      // Cylindrical specular / rim occlusion
+      const cylShadow = ctx.createLinearGradient(-halfW, 0, halfW, 0);
+      cylShadow.addColorStop(0, 'rgba(0, 0, 0, 0.62)');
+      cylShadow.addColorStop(0.22, 'rgba(0, 0, 0, 0.12)');
+      cylShadow.addColorStop(0.38, 'rgba(255, 255, 255, 0.22)');
+      cylShadow.addColorStop(0.48, 'rgba(255, 255, 255, 0.05)');
+      cylShadow.addColorStop(0.7, 'rgba(0, 0, 0, 0.18)');
+      cylShadow.addColorStop(1, 'rgba(0, 0, 0, 0.68)');
+      ctx.fillStyle = cylShadow;
+      ctx.beginPath();
+      ctx.roundRect(-halfW, -halfH, canW, canH, 7 * scale);
+      ctx.fill();
+
+      // Top lid ring
+      const lid = ctx.createLinearGradient(0, -halfH - 2 * scale, 0, -halfH + 10 * scale);
+      lid.addColorStop(0, '#eceae7');
+      lid.addColorStop(1, '#8a8681');
+      ctx.fillStyle = lid;
+      ctx.beginPath();
+      ctx.ellipse(0, -halfH + 2 * scale, halfW * 0.92, 5 * scale, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Stay-tab
+      ctx.save();
+      ctx.translate(-halfW * 0.28, -halfH - 1 * scale);
+      ctx.rotate(-state.openProgress * 0.85);
+      const tabGrad = ctx.createLinearGradient(0, -2, 0, 6);
+      tabGrad.addColorStop(0, '#f0eeeb');
+      tabGrad.addColorStop(1, '#7a7772');
+      ctx.fillStyle = tabGrad;
+      ctx.beginPath();
+      ctx.roundRect(-6 * scale, -3 * scale, 16 * scale, 5 * scale, 1.5 * scale);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      const bHalfW = canW * 0.52;
+      const bottlePath = () => {
+        ctx.beginPath();
+        ctx.moveTo(-bHalfW * 0.3, -halfH);
+        ctx.lineTo(bHalfW * 0.3, -halfH);
+        ctx.bezierCurveTo(bHalfW * 0.34, -halfH + 42 * scale, bHalfW, -halfH + 62 * scale, bHalfW, -halfH + 92 * scale);
+        ctx.lineTo(bHalfW, halfH - 10 * scale);
+        ctx.quadraticCurveTo(bHalfW, halfH, bHalfW - 10 * scale, halfH);
+        ctx.lineTo(-bHalfW + 10 * scale, halfH);
+        ctx.quadraticCurveTo(-bHalfW, halfH, -bHalfW, halfH - 10 * scale);
+        ctx.lineTo(-bHalfW, -halfH + 92 * scale);
+        ctx.bezierCurveTo(-bHalfW, -halfH + 62 * scale, -bHalfW * 0.34, -halfH + 42 * scale, -bHalfW * 0.3, -halfH);
+        ctx.closePath();
+      };
+
+      const bottleGrad = ctx.createLinearGradient(-bHalfW, 0, bHalfW, 0);
+      bottleGrad.addColorStop(0, '#0a0502');
+      bottleGrad.addColorStop(0.28, '#5a2a0c');
+      bottleGrad.addColorStop(0.5, '#8a4518');
+      bottleGrad.addColorStop(0.72, '#3a1808');
+      bottleGrad.addColorStop(1, '#080401');
+      bottlePath();
+      ctx.fillStyle = bottleGrad;
+      ctx.fill();
+
+      // Label / packshot on shoulder+body
+      ctx.save();
+      bottlePath();
+      ctx.clip();
+      const bLabelY = -halfH + 78 * scale;
+      const drew = drawCoverImage(ctx, labelImg, -bHalfW, bLabelY - 20 * scale, bHalfW * 2, 120 * scale);
+      if (!drew) {
+        ctx.fillStyle = beer.paperBg || '#e8dfd0';
+        ctx.fillRect(-bHalfW + 3 * scale, bLabelY, bHalfW * 2 - 6 * scale, 78 * scale);
+        ctx.fillStyle = beer.inkPrimary || '#1a1510';
+        ctx.font = `700 ${Math.round(12 * scale)}px Fraunces, Georgia, serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(beer.name || 'Švabín', 0, bLabelY + 42 * scale);
+      }
+      // Glass edge darkening
+      const edge = ctx.createLinearGradient(-bHalfW, 0, bHalfW, 0);
+      edge.addColorStop(0, 'rgba(0,0,0,0.55)');
+      edge.addColorStop(0.35, 'rgba(0,0,0,0)');
+      edge.addColorStop(0.65, 'rgba(255,200,120,0.08)');
+      edge.addColorStop(1, 'rgba(0,0,0,0.6)');
+      ctx.fillStyle = edge;
+      ctx.fillRect(-bHalfW, -halfH, bHalfW * 2, canH);
+      ctx.restore();
+
+      // Neck highlight
+      ctx.strokeStyle = 'rgba(255, 220, 160, 0.18)';
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(-bHalfW * 0.18, -halfH + 8 * scale);
+      ctx.lineTo(-bHalfW * 0.18, -halfH + 55 * scale);
+      ctx.stroke();
+
+      if (!state.isOpened) {
+        const cork = ctx.createLinearGradient(0, -halfH - 6 * scale, 0, -halfH + 4 * scale);
+        cork.addColorStop(0, '#d4a574');
+        cork.addColorStop(1, '#8a5a2e');
+        ctx.fillStyle = cork;
+        ctx.beginPath();
+        ctx.roundRect(-bHalfW * 0.34, -halfH - 6 * scale, bHalfW * 0.68, 10 * scale, 2 * scale);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(-bHalfW * 0.34, -halfH - 1 * scale, bHalfW * 0.68, 2 * scale);
+      }
+    }
+
+    if (!state.isOpened) {
+      ctx.fillStyle = 'rgba(20, 16, 12, 0.82)';
+      ctx.strokeStyle = 'rgba(200, 138, 54, 0.7)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(-56 * scale, -halfH - 36 * scale, 112 * scale, 22 * scale, 5 * scale);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#f3ede2';
+      ctx.font = `500 ${Math.round(8.5 * scale)}px DM Sans, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Klikni pro otevření', 0, -halfH - 21 * scale);
+    }
+    ctx.restore();
+  }
+
+  function drawParticlesAndCap(spoutX, spoutY) {
+    state.mistParticles.forEach((m) => {
+      ctx.fillStyle = `rgba(243, 237, 226, ${m.alpha})`;
+      ctx.beginPath();
+      ctx.arc(spoutX + m.xOffset, spoutY + m.yOffset, m.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    if (state.flyingCap) {
+      ctx.save();
+      ctx.translate(spoutX + state.flyingCap.x, spoutY + state.flyingCap.y);
+      ctx.rotate(state.flyingCap.angle);
+      ctx.fillStyle = '#c88a36';
+      ctx.fillRect(-11, -4, 22, 7);
+      ctx.restore();
+    }
+  }
+
+  function loop() {
+    if (destroyed) return;
+    updatePhysics();
+    renderScene();
+    frameId = globalThis.requestAnimationFrame?.(loop) ?? null;
+  }
+
+  function reset() {
+    callSafely(sfx?.stopLoop, 'pour-loop');
+    state.isOpened = false;
+    state.openProgress = 0;
+    state.vesselAngle = 0;
+    state.targetVesselAngle = 0;
+    state.isGlassTiltedMode = true;
+    state.glassTiltAngle = -28;
+    state.targetGlassTiltAngle = -28;
+    state.vesselRemainingMl = 500;
+    state.liquidMl = 0;
+    state.foamMl = 0;
+    state.flowRate = 0;
+    state.autoPourMode = null;
+    state.sipsTaken = 0;
+    state.lacingRings = [];
+    state.bubbles = [];
+    state.mistParticles = [];
+    state.flyingCap = null;
+    state.pourLoopPlaying = false;
+    state.foamFinished = false;
+    initCondensation();
+    initFoamCells();
+    emitHud();
+    renderScene();
   }
 
   function selectBeer(beer) {
     state.selectedBeer = { ...DEFAULT_BEER, ...(beer || {}) };
-    resetPourState(state);
-    if (use3d) syncBeerMaterials();
-    emitHud();
+    getLabelImage(state.selectedBeer.image);
+    reset();
   }
 
   function setVesselType(type) {
     if (type !== 'can' && type !== 'bottle') return;
     state.vesselType = type;
-    resetPourState(state);
-    if (use3d) {
-      if (canMesh) canMesh.visible = type === 'can';
-      if (bottleMesh) bottleMesh.visible = type === 'bottle';
-    }
-    emitHud();
+    reset();
   }
 
   function setGlassType(type) {
     if (!['mug', 'teku', 'pint'].includes(type)) return;
     state.glassType = type;
-    if (use3d) rebuildGlassMeshes();
-    emitHud();
+    renderScene();
   }
 
   function toggleGlassTilt() {
-    // Glass tilt removed — kept as no-op for API compatibility
+    state.isGlassTiltedMode = !state.isGlassTiltedMode;
+    state.targetGlassTiltAngle = state.isGlassTiltedMode ? -28 : 0;
+    emitHud();
   }
 
   function startMasterPour(style) {
-    if (state.liquidMl + state.foamMl >= state.maxGlassMl * 0.92 || state.vesselRemainingMl <= 20) {
-      resetPourState(state);
-    }
+    if (state.liquidMl + state.foamMl >= state.maxGlassMl * 0.92 || state.vesselRemainingMl <= 20) reset();
     if (!state.isOpened) triggerOpen();
     state.autoPourMode = ['hladinka', 'snyt', 'mliko'].includes(style) ? style : 'hladinka';
     state.foamFinished = false;
   }
 
   function takeSip() {
-    if (!applySip(state)) return;
+    const total = state.liquidMl + state.foamMl;
+    if (total < 30) return;
     callSafely(sfx?.play, 'sip');
-    emitHud();
-  }
-
-  function reset() {
-    callSafely(sfx?.stopLoop, 'pour-loop');
-    resetPourState(state);
+    state.sipsTaken += 1;
+    const fillRatio = Math.min(1, (state.liquidMl + state.foamMl * 0.85) / state.maxGlassMl);
+    if (fillRatio > 0.15) state.lacingRings.push(fillRatio);
+    if (state.liquidMl >= 95) {
+      state.liquidMl -= 95;
+      state.foamMl = Math.max(8, state.foamMl * 0.88);
+    } else {
+      state.liquidMl = 0;
+      state.foamMl = Math.max(0, state.foamMl - 60);
+    }
+    for (let i = 0; i < state.waveCount; i += 1) {
+      state.waveVelocities[i] += Math.sin(i * 0.6) * 2.2;
+    }
     emitHud();
   }
 
@@ -686,96 +1214,40 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
       y: point.clientY - rect.top,
       w: rect.width,
       h: rect.height,
-      clientX: point.clientX,
-      clientY: point.clientY,
     };
   }
 
-  function setPointerNdc(pos) {
-    pointerNdc.x = (pos.x / pos.w) * 2 - 1;
-    pointerNdc.y = -(pos.y / pos.h) * 2 + 1;
-  }
-
-  function hitInteractive() {
-    if (!use3d || !raycaster || !camera) return null;
-    raycaster.setFromCamera(pointerNdc, camera);
-    const roots = [vesselGroup, glassGroup].filter(Boolean);
-    const hits = raycaster.intersectObjects(roots, true);
-    if (!hits.length) return null;
-    let obj = hits[0].object;
-    while (obj) {
-      if (obj.name === 'vessel' || obj === vesselGroup) return 'vessel';
-      if (obj.name === 'glass' || obj === glassGroup) return 'glass';
-      obj = obj.parent;
-    }
-    return null;
-  }
-
-  let dragStartY = 0;
-  let dragStartAngle = 0;
-
   function onPointerDown(e) {
     const pos = getPos(e);
-    setPointerNdc(pos);
-    const hit = hitInteractive();
-
-    if (hit === 'vessel') {
-      dragTarget = 'vessel';
-      if (!state.isOpened) triggerOpen();
-      dragStartY = pos.y;
-      dragStartAngle = state.targetVesselAngle;
-      if (canvas.style) canvas.style.cursor = 'grabbing';
-      return;
-    }
-
-    if (hit === 'glass') {
-      dragTarget = 'glass';
-      sipHold = 0.25; // immediate first sip on press if enough beer
-      if (state.liquidMl + state.foamMl >= 25) {
-        if (applySip(state, 70)) callSafely(sfx?.play, 'sip');
-      }
-      return;
-    }
-
-    // Empty space: still allow vessel tip drag (fallback UX)
-    dragTarget = 'vessel';
-    dragStartY = pos.y;
-    dragStartAngle = state.targetVesselAngle;
+    if (!state.isOpened && pos.y < pos.h * 0.58) triggerOpen();
+    state.isDragging = true;
+    state.dragStartY = pos.y;
+    state.dragStartAngle = state.targetVesselAngle;
   }
 
   function onPointerMove(e) {
-    const pos = getPos(e);
-    setPointerNdc(pos);
-
-    if (!dragTarget) {
-      const hit = hitInteractive();
-      if (canvas.style) canvas.style.cursor = hit ? 'pointer' : 'grab';
-      return;
-    }
-
+    if (!state.isDragging) return;
     if (e.cancelable) e.preventDefault();
-
-    if (dragTarget === 'vessel') {
-      // Drag down = tip more (natural pour gesture)
-      setTilt(dragStartAngle + (pos.y - dragStartY) * 0.62);
-    }
+    const pos = getPos(e);
+    setTilt(state.dragStartAngle + (pos.y - state.dragStartY) * 0.55);
   }
 
   function onPointerUp() {
-    if (dragTarget === 'vessel') {
-      // Slight spring-back if barely tipped and not pouring
-      if (state.targetVesselAngle < 35 && !state.autoPourMode) {
-        state.targetVesselAngle = 0;
-      }
-    }
-    dragTarget = null;
-    sipHold = 0;
-    if (canvas.style) canvas.style.cursor = 'grab';
+    state.isDragging = false;
   }
 
   function addListener(target, type, handler, options) {
     target?.addEventListener?.(type, handler, options);
     removeListeners.push(() => target?.removeEventListener?.(type, handler, options));
+  }
+
+  function setupEvents() {
+    addListener(canvas, 'mousedown', onPointerDown);
+    addListener(globalThis.window, 'mousemove', onPointerMove);
+    addListener(globalThis.window, 'mouseup', onPointerUp);
+    addListener(canvas, 'touchstart', onPointerDown, { passive: true });
+    addListener(globalThis.window, 'touchmove', onPointerMove, { passive: false });
+    addListener(globalThis.window, 'touchend', onPointerUp);
   }
 
   function destroy() {
@@ -784,30 +1256,20 @@ export function createPourSimulator({ canvas, sfx, onHud } = {}) {
     callSafely(sfx?.stopLoop, 'pour-loop');
     if (frameId != null) globalThis.cancelAnimationFrame?.(frameId);
     resizeObserver?.disconnect?.();
-    removeListeners.splice(0).forEach((fn) => fn());
-    envRT?.dispose?.();
-    pmrem?.dispose?.();
-    renderer?.dispose?.();
+    removeListeners.splice(0).forEach((remove) => remove());
   }
 
-  // Init
-  if (use3d) {
-    initScene();
-  }
-  addListener(canvas, 'mousedown', onPointerDown);
-  addListener(globalThis.window, 'mousemove', onPointerMove);
-  addListener(globalThis.window, 'mouseup', onPointerUp);
-  addListener(canvas, 'touchstart', onPointerDown, { passive: true });
-  addListener(globalThis.window, 'touchmove', onPointerMove, { passive: false });
-  addListener(globalThis.window, 'touchend', onPointerUp);
-
+  initCondensation();
+  initFoamCells();
+  getBarBackground();
+  setupEvents();
   if (typeof globalThis.ResizeObserver === 'function') {
-    resizeObserver = new globalThis.ResizeObserver(resize);
-    resizeObserver.observe(canvas.parentElement || canvas);
+    resizeObserver = new globalThis.ResizeObserver(resizeCanvas);
+    resizeObserver.observe(container);
   } else {
-    addListener(globalThis.window, 'resize', resize);
+    addListener(globalThis.window, 'resize', resizeCanvas);
   }
-  resize();
+  resizeCanvas();
   emitHud();
   frameId = globalThis.requestAnimationFrame?.(loop) ?? null;
 
